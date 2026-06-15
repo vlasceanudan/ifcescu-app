@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
-import { IfcAPI, IFCRELASSIGNSTOACTOR } from "web-ifc";
+import { IfcAPI, IFCRELASSIGNSTOACTOR, IFCMAPCONVERSION } from "web-ifc";
 import { IfcEditor } from "../src/ifc/editor";
 
 // Uses a real IFC so the model is valid; skips gracefully if absent so the
@@ -38,6 +38,17 @@ describe.runIf(hasSample)("IfcEditor round-trip", () => {
     // Apply beneficiary twice (org then person) — must NOT duplicate.
     ed.upsertBeneficiar(proj!.expressID, "ACME SRL", true);
     ed.upsertBeneficiar(proj!.expressID, "Ion Popescu", false);
+    // Georeferencing (Stereo 70 / EPSG:3844). Apply twice to exercise the
+    // upsert path (second call must update, not duplicate).
+    const georefSupported = ed.supportsGeoref();
+    if (georefSupported) {
+      ed.setGeoref({
+        crsName: "EPSG:3844", eastings: 1, northings: 2, height: 3, rotationDeg: 10, scale: 1,
+      });
+      ed.setGeoref({
+        crsName: "EPSG:3844", eastings: 500123.45, northings: 412987.1, height: 120, rotationDeg: 0, scale: 1,
+      });
+    }
 
     const out = ed.export();
     ed.close();
@@ -57,6 +68,20 @@ describe.runIf(hasSample)("IfcEditor round-trip", () => {
     const ben = ed2.getBeneficiar();
     expect(ben?.name).toBe("Ion Popescu");
     expect(ben?.isOrg).toBe(false);
+
+    if (georefSupported) {
+      // Exactly one IfcMapConversion (upsert must not duplicate).
+      const mapConvs = api.GetLineIDsWithType(ed2.modelID, IFCMAPCONVERSION);
+      expect(mapConvs.size()).toBe(1);
+      const g = ed2.getGeoref();
+      expect(g).toBeTruthy();
+      expect(g!.crsName).toBe("EPSG:3844");
+      expect(g!.eastings).toBeCloseTo(500123.45, 2);
+      expect(g!.northings).toBeCloseTo(412987.1, 2);
+      expect(g!.height).toBeCloseTo(120, 2);
+      expect(g!.rotationDeg).toBeCloseTo(0, 4);
+      expect(g!.scale).toBeCloseTo(1, 4);
+    }
 
     ed2.close();
   });

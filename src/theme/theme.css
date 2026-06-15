@@ -675,3 +675,120 @@ table.summary td.k {
   border-radius: 6px;
   font-size: 12px;
 }
+
+/* Globe (Cesium) view */
+.globe-wrap {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  padding: 10px;
+}
+.globe-host {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+}
+.globe-host .cesium-viewer,
+.globe-host .cesium-widget,
+.globe-host .cesium-widget > canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+.globe-overlay {
+  position: absolute;
+  inset: 10px;
+  pointer-events: none;
+}
+.globe-card {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  max-width: 360px;
+  pointer-events: auto;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.82rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+.globe-card.error {
+  border-color: #d23;
+}
+.globe-card.warn {
+  border-color: #d9a400;
+}
+.globe-card.readout .readout-title {
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: var(--bs-magenta);
+}
+.globe-card.readout table {
+  border-collapse: collapse;
+}
+.globe-card.readout td {
+  padding: 1px 0;
+}
+.globe-card.readout td:first-child {
+  color: var(--muted);
+  padding-right: 14px;
+  white-space: nowrap;
+}
+.globe-card.readout td:last-child {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.globe-card.controls {
+  left: auto;
+  right: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 210px;
+}
+.globe-card.controls .seg {
+  display: flex;
+  gap: 4px;
+}
+.globe-card.controls .seg button {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.globe-card.controls .seg button.active {
+  background: var(--bs-magenta);
+  border-color: var(--bs-magenta);
+  color: #fff;
+}
+.globe-card.controls .alpha {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.globe-card.controls .alpha input[type="range"] {
+  flex: 1;
+  cursor: pointer;
+}
+.globe-card.controls .alpha-val {
+  width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.globe-card.controls .hint {
+  font-size: 0.72rem;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  padding-top: 7px;
+}

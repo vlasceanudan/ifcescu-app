@@ -6,6 +6,8 @@ export interface TreeNode {
   name: string;
   ids: number[]; // renderable expressIDs in this subtree (∩ model geometry)
   children: TreeNode[];
+  count?: number; // when set, this is a synthetic "class group" node of `count` elements
+  defaultOpen?: boolean; // overrides the depth-based default expansion
 }
 
 const TYPE_RO: Record<string, string> = {
@@ -48,12 +50,17 @@ function Node({
   onSelect,
   onToggleVisible,
 }: { node: TreeNode; depth: number } & Omit<Props, "root">) {
-  const [open, setOpen] = useState(depth < 2);
+  const [open, setOpen] = useState(node.defaultOpen ?? depth < 2);
   const hasChildren = node.children.length > 0;
 
   const anyVisible = node.ids.some((id) => visibleIds.has(id));
   const selected = selectedIds.has(node.expressID);
-  const label = node.name ? `${friendly(node.type)}: ${node.name}` : `${friendly(node.type)} #${node.expressID}`;
+  const label =
+    node.count != null
+      ? `${friendly(node.type)} (${node.count})`
+      : node.name
+        ? `${friendly(node.type)}: ${node.name}`
+        : `${friendly(node.type)} #${node.expressID}`;
 
   return (
     <div className="tnode">

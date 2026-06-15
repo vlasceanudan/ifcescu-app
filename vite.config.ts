@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { viteStaticCopy } from "vite-plugin-static-copy";
+import cesium from "vite-plugin-cesium";
 
 // base: "./" keeps every asset URL relative, so the built site works at any
 // GitHub Pages path (user.github.io/<repo>/) without rebuilding.
@@ -8,6 +9,9 @@ export default defineConfig({
   base: "./",
   plugins: [
     react(),
+    // Copies Cesium's static assets (Workers/Assets/Widgets/ThirdParty) into the
+    // build and sets window.CESIUM_BASE_URL so the globe view (GlobeViewer) works.
+    cesium(),
     // Serve the web-ifc WASM from the site root (both the editor and the
     // viewer call SetWasmPath(import.meta.env.BASE_URL)).
     viteStaticCopy({

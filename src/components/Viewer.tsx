@@ -1,10 +1,12 @@
-import { type ReactNode, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from "react";
+import { type ReactNode, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { IfcViewerAPI } from "web-ifc-viewer";
 import { Color, Box3, Sphere, Vector3, Group, Raycaster, Vector2, EdgesGeometry } from "three";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial";
 import type { Theme } from "../hooks/useTheme";
+import type { GeorefInfo } from "../ifc/editor";
+import { resolveModelSchema } from "../ifc/api";
 import { MeasureTool, type MeasureMode } from "../viewer/measure";
 import { IfcTree, type TreeNode } from "./IfcTree";
 import { PropAccordion, type PropGroup } from "./PropsPanel";
@@ -13,6 +15,7 @@ interface Props {
   bytes: Uint8Array;
   fileName: string;
   theme: Theme;
+  georef: GeorefInfo | null;
 }
 
 const VIEWER_BG: Record<Theme, string> = { light: "#eef0f4", dark: "#15161a" };
@@ -50,10 +53,11 @@ function Dropdown({ label, icon, active, children }: { label: string; icon: stri
   );
 }
 
-export function Viewer({ bytes, fileName, theme }: Props) {
+export function Viewer({ bytes, fileName, theme, georef }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<any>(null);
   const measureRef = useRef<MeasureTool | null>(null);
+  const georefRef = useRef<GeorefInfo | null>(georef);
   const selGroupRef = useRef<Group | null>(null);
   const stateRef = useRef<{ modelID: number; allIDs: number[] }>({ modelID: -1, allIDs: [] });
   const visibleRef = useRef<Set<number>>(new Set());
@@ -69,6 +73,10 @@ export function Viewer({ bytes, fileName, theme }: Props) {
   const [propsWidth, setPropsWidth] = useState(340);
   const [treeWidth, setTreeWidth] = useState(300);
   const [tree, setTree] = useState<TreeNode | null>(null);
+
+  // Element leaves are grouped under their IFC class (collapsed), with the
+  // spatial containers expanded.
+  const displayTree = useMemo(() => (tree ? groupByClass(tree, { n: 0 }) : tree), [tree]);
   const [visibleIds, setVisibleIds] = useState<Set<number>>(new Set());
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
@@ -107,6 +115,15 @@ export function Viewer({ bytes, fileName, theme }: Props) {
         const model = await viewer.IFC.loadIfc(file, true);
         if (disposed) return;
 
+        // Same web-ifc 0.0.39 IFC4X3 schema-mapping bug as the editor: without
+        // this, the spatial tree, properties and selection (all GetLine-based)
+        // fail for IFC4X3 files. Geometry already loaded via the WASM parser.
+        try {
+          resolveModelSchema(viewer.IFC.loader.ifcManager.ifcAPI, model.modelID, bytes);
+        } catch {
+          /* viewer may bundle a different web-ifc build */
+        }
+
         const allIDs = Array.from(new Set<number>(Array.from(model.geometry.attributes.expressID.array as ArrayLike<number>)));
         stateRef.current = { modelID: model.modelID, allIDs };
         visibleRef.current = new Set(allIDs);
@@ -118,6 +135,7 @@ export function Viewer({ bytes, fileName, theme }: Props) {
         selGroupRef.current = sel;
 
         measureRef.current = new MeasureTool(viewer, host);
+        measureRef.current.setGeoref(georefRef.current);
         setStatus("Model încărcat • orbit: stânga • pan: dreapta • zoom: scroll • Esc: anulează");
         wireEvents(host, viewer);
 
@@ -161,6 +179,12 @@ export function Viewer({ bytes, fileName, theme }: Props) {
       /* ignore */
     }
   }, [theme]);
+
+  // Keep the measurement tool's projected-coordinate reference in sync.
+  useEffect(() => {
+    georefRef.current = georef;
+    measureRef.current?.setGeoref(georef);
+  }, [georef]);
 
   // Keyboard shortcuts: Esc cancels the active command; H hides the selection.
   useEffect(() => {
@@ -464,9 +488,9 @@ export function Viewer({ bytes, fileName, theme }: Props) {
     <div className="viewer-wrap">
       <aside className="ifctree-panel" style={{ width: treeWidth }}>
         <div className="ifctree-head">Structură IFC</div>
-        {tree ? (
+        {displayTree ? (
           <IfcTree
-            root={tree}
+            root={displayTree}
             visibleIds={visibleIds}
             selectedIds={selectedIds}
             onSelect={(ids, expressID) => selectIds(ids, expressID)}
@@ -592,6 +616,47 @@ function clearOutline(group: Group) {
     any.geometry?.dispose?.();
     any.material?.dispose?.();
   }
+}
+
+// Spatial containers form the structural backbone and are never grouped; every
+// other (element) child of a container is grouped under its IFC class.
+const SPATIAL_TYPES = new Set([
+  "IFCPROJECT",
+  "IFCSITE",
+  "IFCBUILDING",
+  "IFCBUILDINGSTOREY",
+  "IFCSPACE",
+]);
+
+/**
+ * Rewrite the spatial tree so that the element children of each container are
+ * grouped into synthetic "class group" nodes (e.g. "Pile (120)"). Spatial
+ * containers stay expanded by default; the class groups start collapsed so a
+ * storey with hundreds of identical elements reads as a short class list.
+ */
+function groupByClass(node: TreeNode, ctr: { n: number }): TreeNode {
+  const children = node.children.map((c) => groupByClass(c, ctr));
+  const containers: TreeNode[] = [];
+  const elements: TreeNode[] = [];
+  for (const c of children) (SPATIAL_TYPES.has(c.type) ? containers : elements).push(c);
+
+  const groups: TreeNode[] = [];
+  if (elements.length) {
+    const byType = new Map<string, TreeNode[]>();
+    for (const e of elements) {
+      const arr = byType.get(e.type);
+      if (arr) arr.push(e);
+      else byType.set(e.type, [e]);
+    }
+    for (const [type, items] of byType) {
+      const ids: number[] = [];
+      for (const it of items) ids.push(...it.ids);
+      groups.push({ expressID: --ctr.n, type, name: "", ids, children: items, count: items.length, defaultOpen: false });
+    }
+    groups.sort((a, b) => a.type.localeCompare(b.type));
+  }
+
+  return { ...node, children: [...containers, ...groups], defaultOpen: true };
 }
 
 function toTreeNode(node: any, allSet: Set<number>): TreeNode {

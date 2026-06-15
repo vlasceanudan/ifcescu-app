@@ -6,6 +6,7 @@
 // into the viewer's three.js scene with HTML labels and a screen-space snap glyph.
 
 import * as THREE from "three";
+import type { GeorefInfo } from "../ifc/editor";
 
 export type MeasureMode = "none" | "length" | "point" | "area";
 type SnapType = "end" | "mid" | "int" | "edge" | "free";
@@ -40,6 +41,9 @@ interface Snap {
 
 export class MeasureTool {
   mode: MeasureMode = "none";
+
+  /** When set, the Point tool also reports projected (Stereo 70) coordinates. */
+  private georef: GeorefInfo | null = null;
 
   private group = new THREE.Group();
   private raycaster = new THREE.Raycaster();
@@ -92,6 +96,10 @@ export class MeasureTool {
     this.cancelPending();
     this.mode = mode;
     this.hideSnap();
+  }
+
+  setGeoref(georef: GeorefInfo | null) {
+    this.georef = georef;
   }
 
   clearAll() {
@@ -319,7 +327,22 @@ export class MeasureTool {
   }
 
   private fmtPoint(p: THREE.Vector3): string {
-    return `X ${p.x.toFixed(2)}  Y ${p.y.toFixed(2)}  Z ${p.z.toFixed(2)}`;
+    // web-ifc-viewer renders IFC (Z-up) geometry as three.js (Y-up): the scene
+    // vector is (ifcX, ifcZ, -ifcY). Convert back to IFC model coordinates so X
+    // is East, Y is North and Z is the height.
+    const ifcX = p.x;
+    const ifcY = -p.z;
+    const ifcZ = p.y;
+    const local = `X ${ifcX.toFixed(2)}  Y ${ifcY.toFixed(2)}  Z ${ifcZ.toFixed(2)}`;
+    const g = this.georef;
+    if (!g) return local;
+    // IfcMapConversion forward transform: model (x,y,z) → projected (E,N,H).
+    const t = (g.rotationDeg * Math.PI) / 180;
+    const ca = Math.cos(t), sa = Math.sin(t);
+    const E = g.eastings + g.scale * (ifcX * ca - ifcY * sa);
+    const N = g.northings + g.scale * (ifcX * sa + ifcY * ca);
+    const H = g.height + ifcZ;
+    return `${local}\nE ${E.toFixed(2)}  N ${N.toFixed(2)}  H ${H.toFixed(2)}`;
   }
 
   private dot(p: THREE.Vector3, color: number): THREE.Mesh {
@@ -357,7 +380,8 @@ export class MeasureTool {
       borderRadius: "4px",
       padding: "1px 6px",
       font: "600 11px system-ui, sans-serif",
-      whiteSpace: "nowrap",
+      whiteSpace: "pre",
+      textAlign: "center",
     } as CSSStyleDeclaration);
     this.labelLayer.appendChild(el);
     return { el, world };

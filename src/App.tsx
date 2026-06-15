@@ -2,17 +2,19 @@ import { useState } from "react";
 import { useTheme } from "./hooks/useTheme";
 import { getIfcApi } from "./ifc/api";
 import { IfcEditor } from "./ifc/editor";
-import type { ProjectInfo, SiteInfo, BeneficiarInfo } from "./ifc/editor";
+import type { ProjectInfo, SiteInfo, BeneficiarInfo, GeorefInfo } from "./ifc/editor";
 import { Header } from "./components/Header";
 import { UploadPanel } from "./components/UploadPanel";
 import { EditorForm } from "./components/EditorForm";
 import { Viewer } from "./components/Viewer";
+import { GlobeViewer } from "./components/GlobeViewer";
 
 interface Loaded {
   editor: IfcEditor;
   project: ProjectInfo;
   sites: SiteInfo[];
   beneficiar: BeneficiarInfo | null;
+  georef: GeorefInfo | null;
   bytes: Uint8Array;
   fileName: string;
 }
@@ -22,7 +24,7 @@ export default function App() {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<"edit" | "view">("edit");
+  const [tab, setTab] = useState<"edit" | "view" | "globe">("edit");
 
   const onFile = async (file: File) => {
     setError(null);
@@ -36,7 +38,15 @@ export default function App() {
       if (!project) throw new Error("Nu există niciun IfcProject în model.");
       const sites = editor.getSites();
       if (!sites.length) throw new Error("Nu s-a găsit niciun IfcSite în model.");
-      setLoaded({ editor, project, sites, beneficiar: editor.getBeneficiar(), bytes, fileName: file.name });
+      setLoaded({
+        editor,
+        project,
+        sites,
+        beneficiar: editor.getBeneficiar(),
+        georef: editor.getGeoref(),
+        bytes,
+        fileName: file.name,
+      });
       setTab("edit");
     } catch (e: any) {
       setError("Nu am putut citi fișierul ca IFC valid. " + (e?.message ? `(${e.message})` : ""));
@@ -63,6 +73,9 @@ export default function App() {
             </button>
             <button className={"tab" + (tab === "view" ? " active" : "")} onClick={() => setTab("view")}>
               🧊 Vizualizare 3D
+            </button>
+            <button className={"tab" + (tab === "globe" ? " active" : "")} onClick={() => setTab("globe")}>
+              🌍 Glob 3D
             </button>
           </nav>
         )}
@@ -100,12 +113,19 @@ export default function App() {
                 sites={loaded.sites}
                 beneficiar={loaded.beneficiar}
                 fileName={loaded.fileName}
+                onGeorefChange={(georef) => setLoaded((prev) => (prev ? { ...prev, georef } : prev))}
               />
             </div>
           </div>
         )}
 
-        {loaded && tab === "view" && <Viewer bytes={loaded.bytes} fileName={loaded.fileName} theme={theme} />}
+        {loaded && tab === "view" && (
+          <Viewer bytes={loaded.bytes} fileName={loaded.fileName} theme={theme} georef={loaded.georef} />
+        )}
+
+        {loaded && tab === "globe" && (
+          <GlobeViewer editor={loaded.editor} georef={loaded.georef} theme={theme} />
+        )}
       </main>
     </div>
   );

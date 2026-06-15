@@ -18,9 +18,15 @@ import {
   IFCORGANIZATION,
   IFCPERSON,
   IFCLABEL,
+  IFCMAPCONVERSION,
+  IFCPROJECTEDCRS,
+  IFCGEOMETRICREPRESENTATIONCONTEXT,
+  IFCLENGTHMEASURE,
+  IFCREAL,
 } from "web-ifc";
 import { newIfcGuid } from "./guid";
-import { BENEFICIAR_REL_NAME } from "./constants";
+import { resolveModelSchema } from "./api";
+import { BENEFICIAR_REL_NAME, STEREO70 } from "./constants";
 
 const REF = 5;
 const STR = 1;
@@ -39,6 +45,20 @@ export interface BeneficiarInfo {
   name: string;
   isOrg: boolean;
 }
+export interface GeorefInfo {
+  /** Projected CRS name, e.g. "EPSG:3844". */
+  crsName: string;
+  /** Eastings (Y / Est) of the model origin in the projected CRS. */
+  eastings: number;
+  /** Northings (X / Nord) of the model origin in the projected CRS. */
+  northings: number;
+  /** Orthogonal height (cotă) of the model origin. */
+  height: number;
+  /** Grid rotation of the model X axis towards north, in degrees. */
+  rotationDeg: number;
+  /** Uniform scale from model units to the projected CRS. */
+  scale: number;
+}
 
 type Handle = { value: number; type: number };
 
@@ -49,8 +69,29 @@ function val(attr: any): string {
     : "";
 }
 
+/** Read a numeric .value out of a web-ifc attribute object, defaulting to `dflt`. */
+function numAttr(attr: any, dflt = 0): number {
+  const n =
+    attr && typeof attr === "object" && "value" in attr ? Number(attr.value) : Number(attr);
+  return Number.isFinite(n) ? n : dflt;
+}
+
+/** Render a number as a STEP-valid REAL literal (always has a decimal point). */
+function stepReal(n: number): string {
+  let s = String(n);
+  if (!/[.eE]/.test(s)) s += ".";
+  return s;
+}
+
 export class IfcEditor {
   private nextId: number;
+  /**
+   * Exact georef values captured by setGeoref. web-ifc 0.0.39 serialises REALs
+   * at only ~6 significant figures, which truncates Stereo 70 eastings/northings
+   * (e.g. 500123.45 → 500123). We re-inject full precision into the exported
+   * STEP text — see export().
+   */
+  private georefExact: GeorefInfo | null = null;
 
   private constructor(
     private api: IfcAPI,
@@ -60,7 +101,11 @@ export class IfcEditor {
   }
 
   static open(api: IfcAPI, bytes: Uint8Array): IfcEditor {
-    return new IfcEditor(api, api.OpenModel(bytes));
+    const modelID = api.OpenModel(bytes);
+    // web-ifc 0.0.39 can't map an "IFC4X3" header to its schema table; fix it
+    // so GetLine works for IFC4X3 site/infrastructure files.
+    resolveModelSchema(api, modelID, bytes);
+    return new IfcEditor(api, modelID);
   }
 
   schema(): string {
@@ -72,7 +117,32 @@ export class IfcEditor {
   }
 
   export(): Uint8Array {
-    return this.api.ExportFileAsIFC(this.modelID);
+    const bytes = this.api.ExportFileAsIFC(this.modelID);
+    return this.georefExact ? this.patchMapConversion(bytes, this.georefExact) : bytes;
+  }
+
+  /**
+   * Rewrite the numeric arguments of the (single) IfcMapConversion line with
+   * full precision, working around web-ifc's ~6-significant-figure REAL output.
+   * The STEP text is pure ASCII (diacritics are \X2\…\X0\ escaped), so a
+   * utf-8 round-trip is safe.
+   */
+  private patchMapConversion(bytes: Uint8Array, g: GeorefInfo): Uint8Array {
+    const text = new TextDecoder().decode(bytes);
+    const re = /(#\d+=IFCMAPCONVERSION\()([^)]*)(\)\s*;)/i;
+    const m = text.match(re);
+    if (!m) return bytes;
+    const args = m[2].split(",");
+    if (args.length < 8) return bytes; // 2 refs + 6 reals expected
+    const theta = (g.rotationDeg * Math.PI) / 180;
+    args[2] = stepReal(g.eastings);
+    args[3] = stepReal(g.northings);
+    args[4] = stepReal(g.height);
+    args[5] = stepReal(Math.cos(theta));
+    args[6] = stepReal(Math.sin(theta));
+    args[7] = stepReal(g.scale);
+    const patched = text.replace(re, `$1${args.join(",")}$3`);
+    return new TextEncoder().encode(patched);
   }
 
   // --- id / value helpers -------------------------------------------------
@@ -102,6 +172,10 @@ export class IfcEditor {
   }
   private label(value: string): any {
     return this.api.CreateIfcType(this.modelID, IFCLABEL, value);
+  }
+  /** Build a typed numeric value (IfcLengthMeasure, IfcReal, …). */
+  private num(typeCode: number, value: number): any {
+    return this.api.CreateIfcType(this.modelID, typeCode, value);
   }
   private idsOfType(type: number): number[] {
     const vec = this.api.GetLineIDsWithType(this.modelID, type);
@@ -264,5 +338,108 @@ export class IfcEditor {
     if (family) person.FamilyName = this.str(family);
     this.api.WriteLine(this.modelID, person);
     return person;
+  }
+
+  // --- georeferencing -----------------------------------------------------
+  // IFC4 "Level 50" georeferencing: an IfcMapConversion ties the model's 3D
+  // IfcGeometricRepresentationContext (SourceCRS) to an IfcProjectedCRS
+  // (TargetCRS, e.g. EPSG:3844 / Stereo 70). Rotation is stored as the model
+  // X-axis direction vector (XAxisAbscissa = cos θ, XAxisOrdinate = sin θ).
+
+  /** True when the schema supports IfcMapConversion (IFC4 / IFC4x3, not IFC2x3). */
+  supportsGeoref(): boolean {
+    return !(this.schema() ?? "").toUpperCase().startsWith("IFC2X3");
+  }
+
+  private firstMapConversion(): any | null {
+    const ids = this.idsOfType(IFCMAPCONVERSION);
+    return ids.length ? this.api.GetLine(this.modelID, ids[0]) : null;
+  }
+
+  /** The model's 3D ("Model") geometric representation context, if any. */
+  private modelContextID(): number | null {
+    const ids = this.idsOfType(IFCGEOMETRICREPRESENTATIONCONTEXT);
+    let fallback: number | null = null;
+    for (const id of ids) {
+      const ctx = this.api.GetLine(this.modelID, id);
+      // Skip subcontexts (they carry their own type code, not this one).
+      if (ctx.type !== IFCGEOMETRICREPRESENTATIONCONTEXT) continue;
+      if (fallback == null) fallback = id;
+      if (val(ctx.ContextType) === "Model") return id;
+    }
+    return fallback;
+  }
+
+  getGeoref(): GeorefInfo | null {
+    const mc = this.firstMapConversion();
+    if (!mc) return null;
+    const ax = mc.XAxisAbscissa != null ? numAttr(mc.XAxisAbscissa, 1) : 1;
+    const ay = mc.XAxisOrdinate != null ? numAttr(mc.XAxisOrdinate, 0) : 0;
+    let crsName = "";
+    if (mc.TargetCRS) {
+      const crs = this.api.GetLine(this.modelID, mc.TargetCRS.value);
+      crsName = val(crs?.Name);
+    }
+    return {
+      crsName,
+      eastings: numAttr(mc.Eastings),
+      northings: numAttr(mc.Northings),
+      height: numAttr(mc.OrthogonalHeight),
+      rotationDeg: (Math.atan2(ay, ax) * 180) / Math.PI,
+      scale: mc.Scale != null ? numAttr(mc.Scale, 1) : 1,
+    };
+  }
+
+  /**
+   * Create or update the model's IfcMapConversion (+ IfcProjectedCRS). Returns
+   * false if the schema can't represent it (IFC2x3) or there is no 3D context.
+   */
+  setGeoref(info: GeorefInfo): boolean {
+    if (!this.supportsGeoref()) return false;
+    const contextID = this.modelContextID();
+    if (contextID == null) return false;
+    this.georefExact = { ...info };
+
+    const theta = (info.rotationDeg * Math.PI) / 180;
+    const abscissa = Math.cos(theta);
+    const ordinate = Math.sin(theta);
+
+    let mc = this.firstMapConversion();
+    if (mc) {
+      mc.Eastings = this.num(IFCLENGTHMEASURE, info.eastings);
+      mc.Northings = this.num(IFCLENGTHMEASURE, info.northings);
+      mc.OrthogonalHeight = this.num(IFCLENGTHMEASURE, info.height);
+      mc.XAxisAbscissa = this.num(IFCREAL, abscissa);
+      mc.XAxisOrdinate = this.num(IFCREAL, ordinate);
+      mc.Scale = this.num(IFCREAL, info.scale);
+      if (mc.TargetCRS) {
+        const crs = this.api.GetLine(this.modelID, mc.TargetCRS.value);
+        crs.Name = this.str(info.crsName || STEREO70.name);
+        crs.Description = this.str(STEREO70.description);
+        this.api.WriteLine(this.modelID, crs);
+      }
+      this.api.WriteLine(this.modelID, mc);
+      return true;
+    }
+
+    const crs = this.create(IFCPROJECTEDCRS);
+    crs.Name = this.str(info.crsName || STEREO70.name);
+    crs.Description = this.str(STEREO70.description);
+    crs.GeodeticDatum = this.str(STEREO70.geodeticDatum);
+    crs.VerticalDatum = this.str(STEREO70.verticalDatum);
+    crs.MapProjection = this.str(STEREO70.mapProjection);
+    this.api.WriteLine(this.modelID, crs);
+
+    mc = this.create(IFCMAPCONVERSION);
+    mc.SourceCRS = this.ref(contextID);
+    mc.TargetCRS = this.ref(crs.expressID);
+    mc.Eastings = this.num(IFCLENGTHMEASURE, info.eastings);
+    mc.Northings = this.num(IFCLENGTHMEASURE, info.northings);
+    mc.OrthogonalHeight = this.num(IFCLENGTHMEASURE, info.height);
+    mc.XAxisAbscissa = this.num(IFCREAL, abscissa);
+    mc.XAxisOrdinate = this.num(IFCREAL, ordinate);
+    mc.Scale = this.num(IFCREAL, info.scale);
+    this.api.WriteLine(this.modelID, mc);
+    return true;
   }
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import type { IfcEditor, ProjectInfo, SiteInfo, BeneficiarInfo } from "../ifc/editor";
-import { ROM_COUNTIES, PSET_LAND, PSET_ADDRESS } from "../ifc/constants";
+import type { IfcEditor, ProjectInfo, SiteInfo, BeneficiarInfo, GeorefInfo } from "../ifc/editor";
+import { ROM_COUNTIES, PSET_LAND, PSET_ADDRESS, STEREO70, STEREO70_BOUNDS } from "../ifc/constants";
 
 const JUDET_PROMPT = "--- Selectați județul ---";
 
@@ -10,11 +10,12 @@ interface Props {
   sites: SiteInfo[];
   beneficiar: BeneficiarInfo | null;
   fileName: string;
+  onGeorefChange?: (g: GeorefInfo) => void;
 }
 
 type SummaryRow = [string, string];
 
-export function EditorForm({ editor, project, sites, beneficiar, fileName }: Props) {
+export function EditorForm({ editor, project, sites, beneficiar, fileName, onGeorefChange }: Props) {
   const [projName, setProjName] = useState(project.name);
   const [projLong, setProjLong] = useState(project.longName);
   const [benIsOrg, setBenIsOrg] = useState(beneficiar?.isOrg ?? false);
@@ -28,11 +29,32 @@ export function EditorForm({ editor, project, sites, beneficiar, fileName }: Pro
   const [region, setRegion] = useState("");
   const [postalCode, setPostalCode] = useState("");
 
+  // Georeferencing (Stereo 70). Kept as strings so the inputs can be empty.
+  const georefSupported = useMemo(() => editor.supportsGeoref(), [editor]);
+  const [eastings, setEastings] = useState("");
+  const [northings, setNorthings] = useState("");
+  const [height, setHeight] = useState("");
+  const [rotationDeg, setRotationDeg] = useState("");
+  const [scale, setScale] = useState("");
+
   const [summary, setSummary] = useState<SummaryRow[] | null>(null);
   const [download, setDownload] = useState<{ url: string; name: string } | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const site = sites[siteIdx];
+
+  // Prefill georeferencing once from any existing IfcMapConversion.
+  useEffect(() => {
+    if (!georefSupported) return;
+    const g = editor.getGeoref();
+    if (!g) return;
+    setEastings(String(g.eastings));
+    setNorthings(String(g.northings));
+    setHeight(String(g.height));
+    setRotationDeg(String(g.rotationDeg));
+    setScale(String(g.scale));
+  }, [editor, georefSupported]);
 
   // (Re)load the per-site fields whenever the selected site changes.
   useEffect(() => {
@@ -53,7 +75,6 @@ export function EditorForm({ editor, project, sites, beneficiar, fileName }: Pro
     if (pc && !/^\d{6}$/.test(pc)) warn.push("Codul poștal românesc are de obicei 6 cifre.");
     if ((landId.trim() || street.trim() || town.trim()) && !landTitleId.trim())
       warn.push("Nr. Cărții funciare este gol, deși alte date sunt completate.");
-    setWarnings(warn);
 
     const rows: SummaryRow[] = [];
     editor.setProject(projName, projLong);
@@ -86,7 +107,47 @@ export function EditorForm({ editor, project, sites, beneficiar, fileName }: Pro
       ["Țară", "Romania"],
     );
 
-    const bytes = editor.export();
+    // Georeferencing: only write when the user supplied an origin (Est + Nord).
+    if (georefSupported && eastings.trim() && northings.trim()) {
+      const g: GeorefInfo = {
+        crsName: STEREO70.name,
+        eastings: Number(eastings),
+        northings: Number(northings),
+        height: Number(height) || 0,
+        rotationDeg: Number(rotationDeg) || 0,
+        scale: Number(scale) || 1,
+      };
+      const b = STEREO70_BOUNDS;
+      if (g.eastings < b.eMin || g.eastings > b.eMax || g.northings < b.nMin || g.northings > b.nMax)
+        warn.push("Coordonatele Stereo 70 par în afara intervalului uzual pentru România.");
+      editor.setGeoref(g);
+      onGeorefChange?.(g);
+      rows.push(
+        ["Sistem de coordonate", STEREO70.name + " (Stereo 70)"],
+        ["Est (Y)", String(g.eastings)],
+        ["Nord (X)", String(g.northings)],
+        ["Cotă (H)", String(g.height)],
+        ["Rotație la nord", g.rotationDeg + "°"],
+        ["Scară", String(g.scale)],
+      );
+    }
+    setWarnings([...warn]);
+
+    let bytes: Uint8Array;
+    try {
+      bytes = editor.export();
+    } catch (e: any) {
+      // web-ifc 0.0.39 can fail to serialise very large models ("offset is out
+      // of bounds"). The edits are applied in-memory; only the download fails.
+      setExportError(
+        "Modificările au fost aplicate, dar exportul a eșuat — modelul este probabil prea mare " +
+          "pentru această versiune. " + (e?.message ? `(${e.message})` : ""),
+      );
+      setDownload(null);
+      setSummary(rows);
+      return;
+    }
+    setExportError(null);
     const blob = new Blob([bytes as unknown as BlobPart], {
       type: "application/x-industry-foundation-classes",
     });
@@ -163,11 +224,39 @@ export function EditorForm({ editor, project, sites, beneficiar, fileName }: Pro
         </div>
       </div>
 
+      <div className="card">
+        <h3>Georeferențiere (Stereo 70)</h3>
+        {georefSupported ? (
+          <>
+            <div className="field">
+              <label>Sistem de coordonate</label>
+              <input value={`${STEREO70.name} – Stereo 70`} readOnly disabled />
+            </div>
+            <div className="row">
+              <Field label="Est (Y)" value={eastings} onChange={setEastings} />
+              <Field label="Nord (X)" value={northings} onChange={setNorthings} />
+            </div>
+            <div className="row">
+              <Field label="Cotă (H)" value={height} onChange={setHeight} />
+              <Field label="Rotație la nord (°)" value={rotationDeg} onChange={setRotationDeg} />
+              <Field label="Scară" value={scale} onChange={setScale} />
+            </div>
+          </>
+        ) : (
+          <div className="alert warn">
+            ⚠️ Georeferențierea (IfcMapConversion) este disponibilă doar pentru fișiere IFC4. Acest
+            model folosește o schemă IFC2x3.
+          </div>
+        )}
+      </div>
+
       {warnings.map((w, i) => (
         <div className="alert warn" key={i}>
           ⚠️ {w}
         </div>
       ))}
+
+      {exportError && <div className="alert error">⛔ {exportError}</div>}
 
       <button className="btn" onClick={apply} data-testid="apply-btn">
         Aplică modificările și generează descărcarea
