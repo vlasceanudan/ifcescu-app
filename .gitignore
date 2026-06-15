@@ -1,0 +1,7 @@
+node_modules
+dist
+dist-ssr
+*.local
+.DS_Store
+_e2e_*.png
+e2e*.mjs

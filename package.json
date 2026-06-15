@@ -1,0 +1,31 @@
+{
+  "name": "ifc-plan-situatie-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "0.135.0",
+    "web-ifc": "0.0.39",
+    "web-ifc-viewer": "1.0.218"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/three": "0.135.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "puppeteer-core": "^23.0.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vite-plugin-static-copy": "^2.2.0",
+    "vitest": "^2.1.8"
+  }
+}
