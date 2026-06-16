@@ -1,0 +1,169 @@
+// Build the viewer's UI data (spatial tree, property groups, file overview) from
+// an @ifc-lite IfcDataStore — replaces web-ifc-viewer's getSpatialStructure /
+// getProperties. The presentational components (IfcTree, PropsPanel) are unchanged.
+import {
+  SpatialHierarchyBuilder,
+  extractRootAttributesFromEntity,
+  extractPropertiesOnDemand,
+  extractQuantitiesOnDemand,
+  type IfcDataStore,
+} from "@ifc-lite/parser";
+import type { TreeNode } from "../components/IfcTree";
+import type { PropGroup, FileInfo } from "../components/PropsPanel";
+import type { GeorefInfo } from "../ifc/editor";
+import { STEREO70, STEREO70_BOUNDS } from "../ifc/constants";
+import { stereo70ToWgs84 } from "../geo/crs";
+
+interface SpatialNodeLike {
+  expressId: number;
+  name: string;
+  children: SpatialNodeLike[];
+  elements: number[];
+}
+
+function entityType(store: IfcDataStore, id: number): string {
+  return (store as any).getEntity(id)?.type ?? "";
+}
+function entityName(store: IfcDataStore, id: number): string {
+  const e = (store as any).getEntity(id);
+  return e ? extractRootAttributesFromEntity(e).name ?? "" : "";
+}
+
+/** Build the spatial-structure tree (containers + element leaves) for IfcTree. */
+export function buildTree(store: IfcDataStore, allIDs: Set<number>): TreeNode | null {
+  let hierarchy;
+  try {
+    hierarchy = new SpatialHierarchyBuilder().build(
+      store.entities,
+      store.relationships,
+      store.strings,
+      store.source,
+      store.entityIndex,
+      (store as any).lengthUnitScale,
+    );
+  } catch {
+    return null;
+  }
+  const root = hierarchy.project as unknown as SpatialNodeLike;
+
+  const walk = (node: SpatialNodeLike): TreeNode => {
+    const children: TreeNode[] = node.children.map(walk);
+    // Element leaves contained directly in this container (only ones with geometry).
+    for (const id of node.elements) {
+      if (!allIDs.has(id)) continue;
+      children.push({
+        expressID: id,
+        type: entityType(store, id),
+        name: entityName(store, id),
+        ids: [id],
+        children: [],
+      });
+    }
+    const ids: number[] = [];
+    if (allIDs.has(node.expressId)) ids.push(node.expressId);
+    for (const c of children) ids.push(...c.ids);
+    return {
+      expressID: node.expressId,
+      type: entityType(store, node.expressId),
+      name: node.name ?? entityName(store, node.expressId),
+      ids,
+      children,
+    };
+  };
+  return walk(root);
+}
+
+/** "IFCCOLUMN" → "IfcColumn". */
+export function prettyIfcType(t: string): string {
+  if (!t) return "";
+  if (/^IFC/i.test(t)) {
+    const rest = t.slice(3);
+    return "Ifc" + rest.charAt(0).toUpperCase() + rest.slice(1).toLowerCase();
+  }
+  return t;
+}
+
+export interface SelectionProps {
+  header: { name: string; type: string };
+  groups: PropGroup[];
+}
+
+/** Build the property/quantity accordion for one element. */
+export function getSelectionProps(store: IfcDataStore, id: number): SelectionProps {
+  const e = (store as any).getEntity(id);
+  const root = e ? extractRootAttributesFromEntity(e) : { name: "", globalId: "", description: "" };
+  const header = { name: root.name ?? "", type: prettyIfcType(entityType(store, id)) };
+
+  const groups: PropGroup[] = [];
+  const attrs = [
+    { k: "Nume", v: root.name ?? "" },
+    { k: "GlobalId", v: root.globalId ?? "" },
+    { k: "Descriere", v: (root as any).description ?? "" },
+  ].filter((r) => r.v.length);
+  if (attrs.length) groups.push({ name: "Atribute", rows: attrs });
+
+  const fmt = (v: unknown) => (v == null ? "" : String(v));
+  for (const set of extractPropertiesOnDemand(store, id)) {
+    const rows = set.properties.map((p) => ({ k: p.name, v: fmt(p.value) })).filter((r) => r.k.length);
+    if (rows.length) groups.push({ name: set.name || "PropertySet", rows });
+  }
+  // Quantity sets (Qto_*) always last.
+  for (const set of extractQuantitiesOnDemand(store, id)) {
+    const rows = set.quantities.map((q) => ({ k: q.name, v: fmt(q.value) })).filter((r) => r.k.length);
+    if (rows.length) groups.push({ name: set.name || "Qto", rows });
+  }
+  return { header, groups };
+}
+
+/** Build the no-selection model overview panel. */
+export function gatherFileInfo(
+  store: IfcDataStore,
+  elementsWithGeometry: number,
+  byteLength: number,
+  fileName: string,
+  schema: string,
+  georef: GeorefInfo | null,
+  /** Model centroid in IFC absolute coordinates (Z-up). */
+  centroid: { x: number; y: number; z: number },
+): FileInfo {
+  const byType = store.entityIndex.byType;
+  const projIds = byType.get("IFCPROJECT") ?? [];
+  let projectName = "";
+  let projectGlobalId = "";
+  if (projIds.length) {
+    const root = extractRootAttributesFromEntity((store as any).getEntity(projIds[0]));
+    projectName = root.name ?? "";
+    projectGlobalId = root.globalId ?? "";
+  }
+
+  // Location pin = the model CENTROID mapped to Stereo 70 via the map conversion
+  // (identity when there's no georef). Using the centroid — not the map origin —
+  // makes models authored in real Stereo 70 coordinates with a zero Eastings/
+  // Northings offset still resolve to their true location. Shown only inside Romania.
+  let E = centroid.x;
+  let N = centroid.y;
+  if (georef) {
+    const t = (georef.rotationDeg * Math.PI) / 180;
+    const c = Math.cos(t), s = Math.sin(t);
+    E = georef.eastings + georef.scale * (centroid.x * c - centroid.y * s);
+    N = georef.northings + georef.scale * (centroid.x * s + centroid.y * c);
+  }
+  const b = STEREO70_BOUNDS;
+  let location: FileInfo["location"] = null;
+  if (E >= b.eMin && E <= b.eMax && N >= b.nMin && N <= b.nMax) {
+    const { lonDeg, latDeg } = stereo70ToWgs84(E, N);
+    location = { lat: latDeg, lon: lonDeg, crs: georef?.crsName || STEREO70.name };
+  }
+
+  return {
+    fileName,
+    fileSizeKB: byteLength / 1024,
+    schema: schema || "—",
+    projectName,
+    projectGlobalId,
+    totalEntities: store.entityIndex.byId.size,
+    buildingStoreys: (byType.get("IFCBUILDINGSTOREY") ?? []).length,
+    elementsWithGeometry,
+    location,
+  };
+}

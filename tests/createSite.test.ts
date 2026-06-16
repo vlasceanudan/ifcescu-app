@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { IfcAPI, IFCRELAGGREGATES } from "web-ifc";
+import { IfcParser, getRawNamedAttributes } from "@ifc-lite/parser";
 import { IfcEditor } from "../src/ifc/editor";
 
 // Minimal, self-contained IFC4 model: an IfcProject with a geometric context
@@ -25,11 +25,8 @@ END-ISO-10303-21;
 
 describe("IfcEditor.createSite", () => {
   it("adds an IfcSite to a site-less model; it survives export+reopen and edits", async () => {
-    const api = new IfcAPI();
-    await api.Init();
-
     const bytes = new TextEncoder().encode(NO_SITE_IFC);
-    const ed = IfcEditor.open(api, bytes);
+    const ed = await IfcEditor.open(bytes);
 
     expect(ed.getProject()).toBeTruthy();
     expect(ed.getSites().length).toBe(0);
@@ -47,7 +44,7 @@ describe("IfcEditor.createSite", () => {
     ed.close();
 
     // Reopen the exported file: the site, its GlobalId, and the pset persist.
-    const ed2 = IfcEditor.open(api, out);
+    const ed2 = await IfcEditor.open(out);
     const sites2 = ed2.getSites();
     expect(sites2.length).toBe(1);
     expect(sites2[0].name).toBe("Teren");
@@ -57,15 +54,17 @@ describe("IfcEditor.createSite", () => {
     );
 
     // The site is wired into the spatial tree via IfcProject -> IfcRelAggregates.
-    const rels = api.GetLineIDsWithType(ed2.modelID, IFCRELAGGREGATES);
+    const store = await new IfcParser().parseColumnar(
+      out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer,
+    );
+    const projId = ed2.getProject()!.expressID;
     let linked = false;
-    for (let i = 0; i < rels.size(); i++) {
-      const rel = api.GetLine(ed2.modelID, rels.get(i));
-      const related: Array<{ value: number }> = rel.RelatedObjects ?? [];
-      if (
-        rel.RelatingObject?.value === ed2.getProject()!.expressID &&
-        related.some((h) => h.value === sites2[0].expressID)
-      ) {
+    for (const id of store.entityIndex.byType.get("IFCRELAGGREGATES") ?? []) {
+      const e = (store as any).getEntity(id);
+      const named = getRawNamedAttributes(e);
+      const relating = named.find((p) => p.name === "RelatingObject")?.raw;
+      const related = named.find((p) => p.name === "RelatedObjects")?.raw;
+      if (relating === projId && Array.isArray(related) && related.includes(sites2[0].expressID)) {
         linked = true;
       }
     }

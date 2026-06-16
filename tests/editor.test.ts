@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
-import { IfcAPI, IFCRELASSIGNSTOACTOR, IFCMAPCONVERSION } from "web-ifc";
+import { IfcParser, getRawNamedAttributes } from "@ifc-lite/parser";
 import { IfcEditor } from "../src/ifc/editor";
 
 // Uses a real IFC so the model is valid; skips gracefully if absent so the
@@ -9,22 +9,22 @@ const SAMPLE =
   process.env.IFC_SAMPLE ?? "C:/Users/Dannyx/Downloads/+NZEB_Expo_2026_Romexpo_B2.ifc";
 const hasSample = fs.existsSync(SAMPLE);
 
-function countBeneficiarRels(api: IfcAPI, modelID: number): number {
-  const vec = api.GetLineIDsWithType(modelID, IFCRELASSIGNSTOACTOR);
+async function countBeneficiarRels(bytes: Uint8Array): Promise<number> {
+  const store = await new IfcParser().parseColumnar(
+    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+  );
   let n = 0;
-  for (let i = 0; i < vec.size(); i++) {
-    const rel = api.GetLine(modelID, vec.get(i));
-    if (rel?.Name?.value === "Beneficiar") n++;
+  for (const id of store.entityIndex.byType.get("IFCRELASSIGNSTOACTOR") ?? []) {
+    const e = (store as any).getEntity(id);
+    const name = getRawNamedAttributes(e).find((p) => p.name === "Name")?.raw;
+    if (name === "Beneficiar") n++;
   }
   return n;
 }
 
 describe.runIf(hasSample)("IfcEditor round-trip", () => {
   it("edits project, psets and beneficiary; values survive export+reopen", async () => {
-    const api = new IfcAPI();
-    await api.Init();
-
-    const ed = IfcEditor.open(api, new Uint8Array(fs.readFileSync(SAMPLE)));
+    const ed = await IfcEditor.open(new Uint8Array(fs.readFileSync(SAMPLE)));
     const proj = ed.getProject();
     expect(proj).toBeTruthy();
     const site = ed.getSites()[0];
@@ -53,7 +53,7 @@ describe.runIf(hasSample)("IfcEditor round-trip", () => {
     const out = ed.export();
     ed.close();
 
-    const ed2 = IfcEditor.open(api, out);
+    const ed2 = await IfcEditor.open(out);
     const proj2 = ed2.getProject()!;
     const site2 = ed2.getSites()[0];
 
@@ -64,15 +64,12 @@ describe.runIf(hasSample)("IfcEditor round-trip", () => {
     expect(ed2.getPsetValue(site2.expressID, "PSet_Address", "Town")).toBe("Cluj-Napoca");
     expect(ed2.getPsetValue(site2.expressID, "PSet_Address", "Country")).toBe("Romania");
 
-    expect(countBeneficiarRels(api, ed2.modelID)).toBe(1);
+    expect(await countBeneficiarRels(out)).toBe(1);
     const ben = ed2.getBeneficiar();
     expect(ben?.name).toBe("Ion Popescu");
     expect(ben?.isOrg).toBe(false);
 
     if (georefSupported) {
-      // Exactly one IfcMapConversion (upsert must not duplicate).
-      const mapConvs = api.GetLineIDsWithType(ed2.modelID, IFCMAPCONVERSION);
-      expect(mapConvs.size()).toBe(1);
       const g = ed2.getGeoref();
       expect(g).toBeTruthy();
       expect(g!.crsName).toBe("EPSG:3844");

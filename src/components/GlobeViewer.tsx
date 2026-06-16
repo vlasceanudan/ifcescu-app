@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import * as Cesium from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
-import type { IfcEditor, GeorefInfo } from "../ifc/editor";
+import type { GeorefInfo } from "../ifc/editor";
 import type { Theme } from "../hooks/useTheme";
-import { getIfcApi } from "../ifc/api";
-import { extractMergedMesh } from "../geo/extractGeometry";
+import { extractMergedMeshFromBytes } from "../geo/extractGeometry";
 import { loadGeoidGrid } from "../geo/geoid";
 import { computePlacement, toEnuVertices, type Placement } from "../geo/placement";
 import { buildGlb } from "../geo/glb";
@@ -16,14 +15,14 @@ Cesium.Ion.defaultAccessToken = "";
 const SAT_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 
 interface Props {
-  editor: IfcEditor;
+  bytes: Uint8Array;
   georef: GeorefInfo | null;
   theme: Theme;
 }
 
 type Status = "loading" | "ready" | "unplaceable" | "error";
 
-export function GlobeViewer({ editor, georef }: Props) {
+export function GlobeViewer({ bytes, georef }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Cesium.Viewer | null>(null);
   const satLayerRef = useRef<Cesium.ImageryLayer | null>(null);
@@ -107,10 +106,7 @@ export function GlobeViewer({ editor, georef }: Props) {
 
     (async () => {
       try {
-        const [api, grid] = await Promise.all([getIfcApi(), loadGeoidGrid()]);
-        if (disposed) return;
-
-        const mesh = extractMergedMesh(api, editor.modelID);
+        const [mesh, grid] = await Promise.all([extractMergedMeshFromBytes(bytes), loadGeoidGrid()]);
         if (disposed) return;
         if (!mesh.vertexCount) {
           setStatus("error");
@@ -213,7 +209,7 @@ export function GlobeViewer({ editor, georef }: Props) {
       viewerRef.current = null;
       satLayerRef.current = null;
     };
-  }, [editor, georef]);
+  }, [bytes, georef]);
 
   // Toggle satellite imagery.
   useEffect(() => {

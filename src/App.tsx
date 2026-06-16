@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useTheme } from "./hooks/useTheme";
-import { getIfcApi } from "./ifc/api";
 import { IfcEditor } from "./ifc/editor";
 import type { ProjectInfo, SiteInfo, BeneficiarInfo, GeorefInfo } from "./ifc/editor";
 import { Header } from "./components/Header";
@@ -42,8 +41,7 @@ export default function App() {
     setFavorites(new Set()); // reset favorites for the new model
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const api = await getIfcApi();
-      const editor = IfcEditor.open(api, bytes);
+      const editor = await IfcEditor.open(bytes);
       const project = editor.getProject();
       if (!project) throw new Error("Nu există niciun IfcProject în model.");
       // A missing IfcSite no longer blocks loading — the user can add one from
@@ -150,7 +148,7 @@ export default function App() {
         )}
 
         {loaded && tab === "globe" && (
-          <GlobeViewer editor={loaded.editor} georef={loaded.georef} theme={theme} />
+          <GlobeViewer bytes={loaded.bytes} georef={loaded.georef} theme={theme} />
         )}
       </main>
     </div>

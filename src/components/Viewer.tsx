@@ -1,15 +1,10 @@
-import { type ReactNode, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
-import { IfcViewerAPI } from "web-ifc-viewer";
-import { IFCPROJECT, IFCBUILDINGSTOREY } from "web-ifc";
-import { Color, Box3, Sphere, Vector3, Group, Raycaster, Vector2, EdgesGeometry } from "three";
-import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2";
-import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry";
-import { LineMaterial } from "three/examples/jsm/lines/LineMaterial";
+import { type ReactNode, type CSSProperties, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import type { IfcDataStore } from "@ifc-lite/parser";
 import type { Theme } from "../hooks/useTheme";
 import type { GeorefInfo } from "../ifc/editor";
-import { resolveModelSchema } from "../ifc/api";
-import { stereo70ToWgs84 } from "../geo/crs";
-import { STEREO70, STEREO70_BOUNDS } from "../ifc/constants";
+import { detectSchema } from "../ifc/store";
+import { ViewerEngine } from "../viewer/engine";
+import { buildTree, getSelectionProps, gatherFileInfo } from "../viewer/model";
 import { MeasureTool, type MeasureMode } from "../viewer/measure";
 import { IfcTree, type TreeNode } from "./IfcTree";
 import { PropAccordion, FileInfoPanel, type PropGroup, type FileInfo } from "./PropsPanel";
@@ -19,16 +14,24 @@ interface Props {
   fileName: string;
   theme: Theme;
   georef: GeorefInfo | null;
-  /** Favorited property names + toggle, owned by App so they reset on new file. */
   favorites: Set<string>;
   onToggleFavorite: (key: string) => void;
 }
 
-const VIEWER_BG: Record<Theme, string> = { light: "#eef0f4", dark: "#15161a" };
-const SELECT_COLOR = 0xbcf124; // selection outline (lime), not magenta
-const SELECT_WIDTH = 3; // outline thickness in pixels (fat lines)
+const VIEWER_BG: Record<Theme, [number, number, number, number]> = {
+  light: [0.933, 0.941, 0.957, 1],
+  dark: [0.082, 0.086, 0.102, 1],
+};
+const hasWebGPU = typeof navigator !== "undefined" && "gpu" in navigator && !!(navigator as any).gpu;
 
-/** Grouped toolbar dropdown (Trimble-style): closes on click-outside / Escape. */
+const sectionCtlStyle: CSSProperties = {
+  position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 6,
+  display: "flex", alignItems: "center", gap: 14, padding: "8px 14px",
+  background: "rgba(20,20,24,0.86)", color: "#fff", borderRadius: 8,
+  boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
+};
+
+/** Grouped toolbar dropdown (closes on click-outside / Escape). */
 function Dropdown({ label, icon, active, children }: { label: string; icon: string; active?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -50,154 +53,97 @@ function Dropdown({ label, icon, active, children }: { label: string; icon: stri
         <span>{label}</span>
         <span className="caret">▾</span>
       </button>
-      {open && (
-        <div className="vmenu" onClick={() => setOpen(false)}>
-          {children}
-        </div>
-      )}
+      {open && <div className="vmenu" onClick={() => setOpen(false)}>{children}</div>}
     </div>
   );
 }
 
 export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavorite }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const viewerRef = useRef<any>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const engineRef = useRef<ViewerEngine | null>(null);
   const measureRef = useRef<MeasureTool | null>(null);
+  const storeRef = useRef<IfcDataStore | null>(null);
   const georefRef = useRef<GeorefInfo | null>(georef);
-  const selGroupRef = useRef<Group | null>(null);
-  const stateRef = useRef<{ modelID: number; allIDs: number[] }>({ modelID: -1, allIDs: [] });
-  const visibleRef = useRef<Set<number>>(new Set());
+
+  const allIDsRef = useRef<number[]>([]);
+  const hiddenRef = useRef<Set<number>>(new Set());
+  const isolatedRef = useRef<Set<number> | null>(null);
   const selectedRef = useRef<Set<number>>(new Set());
-  // Elements hidden by the last H press, so a second H restores them (until a
-  // new element is selected).
   const lastHiddenRef = useRef<number[]>([]);
   const sectionRef = useRef(false);
-  const ray = useRef(new Raycaster());
 
   const [status, setStatus] = useState("Se inițializează vizualizatorul…");
   const [measureMode, setMeasureMode] = useState<MeasureMode>("none");
+  const [snapOpts, setSnapOpts] = useState({ vertex: true, midpoint: true, edge: true, face: true });
+  const toggleSnap = (k: "vertex" | "midpoint" | "edge" | "face") =>
+    setSnapOpts((s) => {
+      const next = { ...s, [k]: !s[k] };
+      if (engineRef.current) engineRef.current.snapOptions = next;
+      return next;
+    });
   const [section, setSection] = useState(false);
+  const [secPos, setSecPos] = useState(50);
+  const [secFlip, setSecFlip] = useState(false);
   const [propGroups, setPropGroups] = useState<PropGroup[] | null>(null);
   const [propsKey, setPropsKey] = useState(0);
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
-  // Name + IFC class of the currently selected element (shown as the panel title).
   const [selHeader, setSelHeader] = useState<{ name: string; type: string } | null>(null);
-  // Favorites (favorites / onToggleFavorite) are owned by App so they reset when
-  // a new IFC is imported and survive Edit↔View tab switches of the same file.
   const [propsWidth, setPropsWidth] = useState(340);
   const [treeWidth, setTreeWidth] = useState(300);
   const [tree, setTree] = useState<TreeNode | null>(null);
-
-  // Element leaves are grouped under their IFC class (collapsed), with the
-  // spatial containers expanded.
-  const displayTree = useMemo(() => (tree ? groupByClass(tree, { n: 0 }) : tree), [tree]);
   const [visibleIds, setVisibleIds] = useState<Set<number>>(new Set());
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
+  const displayTree = useMemo(() => (tree ? groupByClass(tree, { n: 0 }) : tree), [tree]);
+
   useEffect(() => {
+    if (!hasWebGPU) return;
     const host = hostRef.current;
-    if (!host || viewerRef.current) return;
+    const canvas = canvasRef.current;
+    if (!host || !canvas || engineRef.current) return;
     let disposed = false;
 
-    const viewer = new IfcViewerAPI({ container: host, backgroundColor: new Color(VIEWER_BG[theme]) });
-    viewerRef.current = viewer;
-    (window as any).__viewer = viewer;
-    viewer.IFC.setWasmPath(import.meta.env.BASE_URL);
+    const engine = new ViewerEngine(canvas);
+    engineRef.current = engine;
+    (window as any).__engine = engine;
+    engine.setState({ clearColor: VIEWER_BG[theme] });
 
-    // When the viewer container resizes (panel drag / window), the canvas +
-    // postproduction overlay stretch via CSS (smooth, no flicker); the renderer
-    // is resized crisply only AFTER resizing settles (debounced) to avoid the
-    // per-frame composer re-size that caused flicker during a drag.
     let resizeTimer: ReturnType<typeof setTimeout> | undefined;
     const ro = new ResizeObserver(() => {
-      setSelResolution();
       clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => {
-        try {
-          viewerRef.current?.context?.updateAspect?.();
-        } catch {
-          /* ignore */
-        }
-      }, 150);
+      resizeTimer = setTimeout(() => engineRef.current?.resize(), 100);
     });
     ro.observe(host);
 
     (async () => {
       try {
-        setStatus("Se încarcă modelul IFC…");
-        const file = new File([bytes as unknown as BlobPart], fileName || "model.ifc");
-        const model = await viewer.IFC.loadIfc(file, true);
+        await engine.init();
+        engine.resize();
         if (disposed) return;
-
-        // Same web-ifc 0.0.39 IFC4X3 schema-mapping bug as the editor: without
-        // this, the spatial tree, properties and selection (all GetLine-based)
-        // fail for IFC4X3 files. Geometry already loaded via the WASM parser.
-        try {
-          resolveModelSchema(viewer.IFC.loader.ifcManager.ifcAPI, model.modelID, bytes);
-        } catch {
-          /* viewer may bundle a different web-ifc build */
-        }
-
-        const allIDs = Array.from(new Set<number>(Array.from(model.geometry.attributes.expressID.array as ArrayLike<number>)));
-        stateRef.current = { modelID: model.modelID, allIDs };
-        visibleRef.current = new Set(allIDs);
+        setStatus("Se încarcă modelul IFC…");
+        const { store, allIDs } = await engine.load(bytes);
+        if (disposed) return;
+        storeRef.current = store;
+        allIDsRef.current = allIDs;
         setVisibleIds(new Set(allIDs));
 
-        // Georeferenced models carry Stereo 70 coordinates (~10^5–10^6 m). That
-        // far from the origin, float32 precision in the shaders is only ~dm, so
-        // the model visibly jitters while orbiting. Recenter the geometry on its
-        // bounding-box centre so it renders near the origin — every subset shares
-        // this position buffer, so they all shift with it. The offset is handed
-        // to the measure tool so reported model / Stereo 70 coordinates stay exact.
-        const modelOffset = new Vector3();
-        model.geometry.computeBoundingBox();
-        model.geometry.boundingBox?.getCenter(modelOffset);
-        if (modelOffset.lengthSq() > 1) {
-          model.geometry.translate(-modelOffset.x, -modelOffset.y, -modelOffset.z);
-          model.geometry.computeBoundingSphere();
-        }
-
-        installDisplaySubset(viewer, model, allIDs);
-
-        const sel = new Group();
-        viewer.context.getScene().add(sel);
-        selGroupRef.current = sel;
-
-        measureRef.current = new MeasureTool(viewer, host);
+        measureRef.current = new MeasureTool(engine, host);
         measureRef.current.setGeoref(georefRef.current);
-        measureRef.current.setModelOffset(modelOffset);
+        engine.onSectionMove = (pos) => setSecPos(pos); // keep the slider in sync with the drag handle
+        wireEvents(host);
 
-        // loadIfc framed the camera on the pre-recenter position; refit to the
-        // recentred model so it is back in view.
-        try {
-          const b = modelBounds();
-          if (b) b.cc.fitToSphere(b.sphere, false);
-        } catch {
-          /* ignore */
-        }
-
+        setTree(buildTree(store, new Set(allIDs)));
+        // Model centroid in IFC absolute coords (handles real-coordinate models
+        // whose IfcMapConversion has a zero Eastings/Northings offset).
+        const mb = engine.modelBounds();
+        const centroid = mb
+          ? engine.worldToIfc({ x: (mb.min[0] + mb.max[0]) / 2, y: (mb.min[1] + mb.max[1]) / 2, z: (mb.min[2] + mb.max[2]) / 2 })
+          : { x: engine.rtcOffset.x, y: engine.rtcOffset.y, z: engine.rtcOffset.z };
+        setFileInfo(
+          gatherFileInfo(store, allIDs.length, bytes.length, fileName, detectSchema(bytes), georefRef.current, centroid),
+        );
         setStatus("Model încărcat • orbit: stânga • pan: dreapta • zoom: scroll • Esc: anulează");
-        wireEvents(host, viewer);
-
-        // Build the spatial-structure tree (names included).
-        try {
-          const struct = await viewer.IFC.getSpatialStructure(model.modelID, true);
-          const allSet = new Set(allIDs);
-          const api = viewer.IFC.loader.ifcManager.ifcAPI;
-          setTree(toTreeNode(struct, allSet, api, model.modelID));
-        } catch {
-          /* tree optional */
-        }
-
-        // General model/file overview shown when nothing is selected.
-        try {
-          const api = viewer.IFC.loader.ifcManager.ifcAPI;
-          setFileInfo(
-            gatherFileInfo(api, model.modelID, allIDs.length, modelOffset, bytes.length, fileName, georefRef.current),
-          );
-        } catch {
-          /* info panel optional */
-        }
       } catch (e: any) {
         if (!disposed) setStatus("Eroare la încărcarea modelului: " + (e?.message ?? e));
       }
@@ -205,220 +151,141 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
 
     return () => {
       disposed = true;
-      try {
-        measureRef.current?.dispose();
-        viewer.dispose();
-      } catch {
-        /* ignore */
-      }
       clearTimeout(resizeTimer);
       ro.disconnect();
+      measureRef.current?.dispose();
+      engine.dispose();
       measureRef.current = null;
-      viewerRef.current = null;
-      delete (window as any).__viewer;
+      engineRef.current = null;
+      delete (window as any).__engine;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Update the viewer background when the app theme changes.
   useEffect(() => {
-    const v = viewerRef.current;
-    if (!v) return;
-    try {
-      v.context.getScene().background = new Color(VIEWER_BG[theme]);
-    } catch {
-      /* ignore */
-    }
+    engineRef.current?.setState({ clearColor: VIEWER_BG[theme] });
   }, [theme]);
 
-  // Keep the measurement tool's projected-coordinate reference in sync.
   useEffect(() => {
     georefRef.current = georef;
     measureRef.current?.setGeoref(georef);
   }, [georef]);
 
-  // Keyboard shortcuts: Esc cancels the active command; H toggles hiding the
-  // selection (press again to restore); Z zooms to the selection.
+  // Turning the section tool OFF removes the plane. Turning it ON only ARMS the
+  // tool — the plane is created when the user double-clicks a face.
+  useEffect(() => {
+    if (!section) engineRef.current?.clearSection();
+  }, [section]);
+
+  // Keyboard: Esc cancels; H hide/restore selection; Z zoom-to-selection.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === "Escape") {
-        measureRef.current?.setMode("none");
-        setMeasureMode("none");
-        if (sectionRef.current) {
-          sectionRef.current = false;
-          setSection(false);
-        }
+        chooseMeasure("none");
+        if (sectionRef.current) toggleSection();
         setStatus("Comandă anulată (Esc).");
-        return;
-      }
-      if (e.key === "h" || e.key === "H") {
+      } else if (e.key === "h" || e.key === "H") {
         toggleHideSelection();
-        return;
-      }
-      if (e.key === "z" || e.key === "Z") {
-        if (selectedRef.current.size) zoomToSelection();
-        return;
+      } else if (e.key === "z" || e.key === "Z") {
+        if (selectedRef.current.size) engineRef.current?.zoomToSelection(selectedRef.current);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function wireEvents(host: HTMLElement, viewer: any) {
-    host.onclick = (ev: MouseEvent) => {
+  function wireEvents(host: HTMLElement) {
+    host.onclick = async (ev: MouseEvent) => {
       const measure = measureRef.current;
-      if (measure && measure.mode !== "none") {
-        measure.onClick(ev);
-        return;
-      }
+      if (measure && measure.mode !== "none") return measure.onClick(ev);
       if (sectionRef.current) return;
-      const hit = raycastVisible(viewer, ev);
-      if (hit) {
-        const id = readExpressId(hit);
-        if (id != null) {
-          selectIds([id], id);
-          return;
-        }
-      }
-      clearSelection();
+      const engine = engineRef.current;
+      if (!engine) return;
+      const hit = await engine.pick(ev.clientX, ev.clientY);
+      if (hit && hit.expressId != null) selectIds([hit.expressId], hit.expressId);
+      else clearSelection();
     };
-
-    host.ondblclick = () => {
+    host.ondblclick = (ev: MouseEvent) => {
       const measure = measureRef.current;
-      if (measure && measure.mode === "area") {
-        measure.onDblClick();
-        return;
-      }
-      if (sectionRef.current) viewer.clipper.createPlane();
+      if (measure && measure.mode === "area") return measure.onDblClick();
+      if (measure && measure.mode !== "none") return;
+      // Only when the section tool is armed: double-click a face → create the cut there.
+      if (sectionRef.current) sectionFromFace(ev);
     };
-
-    // Measurement hover only — NO selection/preselection highlight on move.
     host.onmousemove = (ev: MouseEvent) => {
       const measure = measureRef.current;
       if (measure && measure.mode !== "none") measure.onMove(ev);
     };
   }
 
-  const raycastVisible = (viewer: any, ev: MouseEvent) => {
-    const host = hostRef.current!;
-    const r = host.getBoundingClientRect();
-    const ndc = new Vector2(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
-    ray.current.setFromCamera(ndc, viewer.context.getCamera());
-    (ray.current as any).firstHitOnly = false;
-    const hits = ray.current.intersectObjects(viewer.context.items.pickableIfcModels, false);
-    const planes = viewer.context.getClippingPlanes?.() ?? [];
-    for (const h of hits) if (planes.every((p: any) => p.distanceToPoint(h.point) >= -1e-4)) return h;
-    return null;
-  };
-
-  const readExpressId = (hit: any): number | null => {
-    const attr = hit.object?.geometry?.attributes?.expressID;
-    const face = hit.face;
-    if (!attr || !face) return null;
-    return attr.getX(face.a);
-  };
-
-  // Update fat-line outline materials' resolution to the current canvas size.
-  const setSelResolution = () => {
-    const host = hostRef.current;
-    const sel = selGroupRef.current;
-    if (!host || !sel) return;
-    const w = host.clientWidth || 1;
-    const h = host.clientHeight || 1;
-    sel.traverse((o: any) => o.material?.resolution?.set(w, h));
-  };
-
-  // --- selection (outline only) ------------------------------------------
+  // --- selection ----------------------------------------------------------
   const selectIds = (ids: number[], expressID?: number) => {
-    const viewer = viewerRef.current;
-    const sel = selGroupRef.current;
-    if (!viewer || !sel) return;
-    if (ids.length) lastHiddenRef.current = []; // new pick resets the H hide/show toggle
-    clearOutline(sel);
-    if (ids.length) {
-      const manager = viewer.IFC.loader.ifcManager;
-      const scene = viewer.context.getScene();
-      const sub = manager.createSubset({ modelID: stateRef.current.modelID, ids, applyBVH: false, scene, removePrevious: true, customID: "__seloutline" });
-      if (sub) {
-        sub.updateMatrixWorld(true);
-        const edges = new EdgesGeometry(sub.geometry, 30);
-        edges.applyMatrix4(sub.matrixWorld);
-        const geom = new LineSegmentsGeometry().fromEdgesGeometry(edges);
-        const mat = new LineMaterial({ color: SELECT_COLOR, linewidth: SELECT_WIDTH, depthTest: false });
-        const line = new LineSegments2(geom, mat);
-        line.renderOrder = 998;
-        sel.add(line);
-        sub.removeFromParent(); // keep only the outline, not the fill
-        setSelResolution();
-      }
-    }
+    if (ids.length) lastHiddenRef.current = [];
     selectedRef.current = new Set(ids);
     setSelectedIds(new Set(ids));
+    engineRef.current?.setSelectionOutline(ids);
     const propId = expressID ?? (ids.length === 1 ? ids[0] : undefined);
-    if (propId != null) showProperties(viewer, stateRef.current.modelID, propId);
-    else {
+    const store = storeRef.current;
+    if (propId != null && store) {
+      const { header, groups } = getSelectionProps(store, propId);
+      setSelHeader(header);
+      setPropGroups(groups);
+      setPropsKey((k) => k + 1);
+    } else {
       setPropGroups(null);
       setSelHeader(null);
     }
   };
 
   const clearSelection = () => {
-    if (selGroupRef.current) clearOutline(selGroupRef.current);
     selectedRef.current = new Set();
     setSelectedIds(new Set());
+    engineRef.current?.setSelectionOutline([]);
     setPropGroups(null);
     setSelHeader(null);
   };
 
-  /** Fit the camera to the currently selected element(s). */
-  const zoomToSelection = () => {
-    const viewer = viewerRef.current;
-    const cc = viewer?.context?.ifcCamera?.cameraControls;
-    const ids = [...selectedRef.current];
-    if (!viewer || !cc || !ids.length) return;
-    try {
-      const manager = viewer.IFC.loader.ifcManager;
-      const scene = viewer.context.getScene();
-      const sub = manager.createSubset({
-        modelID: stateRef.current.modelID, ids, applyBVH: false, scene, removePrevious: true, customID: "__selzoom",
-      });
-      if (!sub) return;
-      sub.updateMatrixWorld(true);
-      // Subsets share the model's full position buffer and pick triangles via an
-      // index, so geometry.boundingBox (and Box3.setFromObject) would cover the
-      // WHOLE model. Build the box from just the indexed vertices instead.
-      const box = new Box3();
-      const pos = sub.geometry.attributes.position;
-      const index = sub.geometry.index;
-      if (index && pos) {
-        const p = new Vector3();
-        for (let i = 0; i < index.count; i++) {
-          box.expandByPoint(p.fromBufferAttribute(pos, index.getX(i)));
-        }
-        box.applyMatrix4(sub.matrixWorld);
-      } else if (pos) {
-        box.setFromBufferAttribute(pos).applyMatrix4(sub.matrixWorld);
-      }
-      sub.removeFromParent();
-      if (box.isEmpty()) return;
-      cc.fitToSphere(box.getBoundingSphere(new Sphere()), true);
-    } catch {
-      /* ignore */
-    }
+  // --- visibility ---------------------------------------------------------
+  const applyVisibility = () => {
+    const eng = engineRef.current;
+    if (!eng) return;
+    eng.setState({ hiddenIds: new Set(hiddenRef.current), isolatedIds: isolatedRef.current ? new Set(isolatedRef.current) : null });
+    const all = allIDsRef.current;
+    const iso = isolatedRef.current;
+    const next = new Set<number>(iso ? [...iso] : all);
+    for (const id of hiddenRef.current) next.delete(id);
+    setVisibleIds(next);
   };
-
-  /** Hide the currently selected element(s); remembers them so H can restore. */
+  const hideIds = (ids: number[]) => {
+    for (const id of ids) hiddenRef.current.add(id);
+    applyVisibility();
+    clearSelection();
+  };
+  const showIds = (ids: number[]) => {
+    for (const id of ids) hiddenRef.current.delete(id);
+    applyVisibility();
+  };
+  const isolateIds = (ids: number[]) => {
+    isolatedRef.current = new Set(ids);
+    hiddenRef.current.clear();
+    applyVisibility();
+    clearSelection();
+  };
+  const showAll = () => {
+    isolatedRef.current = null;
+    hiddenRef.current.clear();
+    applyVisibility();
+  };
   const hideSelection = () => {
     const ids = [...selectedRef.current];
     if (!ids.length) return;
     lastHiddenRef.current = ids;
     hideIds(ids);
   };
-
-  /** Toggle (H): hide the selection, or restore the last H-hidden elements. */
   const toggleHideSelection = () => {
     if (selectedRef.current.size) {
       hideSelection();
@@ -430,60 +297,52 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
     }
   };
 
-  async function showProperties(viewer: any, modelID: number, id: number) {
-    try {
-      // recursive=true expands each property set's properties/quantities.
-      const p = await viewer.IFC.getProperties(modelID, id, true, true);
-      const v = (x: any) => (x && x.value != null ? String(x.value) : "");
-      const qval = (it: any) =>
-        it.NominalValue ?? it.LengthValue ?? it.AreaValue ?? it.VolumeValue ?? it.CountValue ?? it.WeightValue ?? it.Value;
+  // --- tools --------------------------------------------------------------
+  const chooseMeasure = (mode: MeasureMode) => {
+    const next = measureMode === mode ? "none" : mode;
+    setMeasureMode(next);
+    measureRef.current?.setMode(next);
+    // Measurement and an active section coexist — do NOT reset the section here.
+    setStatus(
+      next === "length" ? "Lungime: click pe 2 puncte"
+        : next === "point" ? "Punct: click pentru coordonate"
+          : next === "area" ? "Arie: click pe vârfuri, dublu-click pentru a închide"
+            : "Măsurare dezactivată",
+    );
+  };
 
-      // Element title (name + IFC class) shown above the property groups. The
-      // type comes from the line's type code (getProperties().type is unreliable).
-      let typeStr = "";
-      try {
-        const api = viewer.IFC.loader.ifcManager.ifcAPI;
-        typeStr = api.GetNameFromTypeCode(api.GetLineType(modelID, id)) ?? "";
-      } catch {
-        /* ignore */
-      }
-      setSelHeader({ name: v(p.Name), type: prettyIfcType(typeStr) });
+  const toggleSection = () => {
+    const on = !sectionRef.current;
+    sectionRef.current = on;
+    setSection(on);
+    setStatus(on ? "Secțiune: dublu-click pe o față pentru a crea planul" : "Secțiune dezactivată");
+  };
 
-      const groups: PropGroup[] = [];
-      // Attributes group (the IFC class lives in the title, so it's omitted here).
-      const attrs = [
-        { k: "Nume", v: v(p.Name) },
-        { k: "GlobalId", v: v(p.GlobalId) },
-        { k: "Descriere", v: v(p.Description) },
-      ].filter((r) => r.v.length);
-      if (attrs.length) groups.push({ name: "Atribute", rows: attrs });
+  // Double-click a face → section plane aligned to that face (normal = face
+  // normal), through the hit point. Visible + movable afterwards via the slider.
+  const sectionFromFace = (ev: MouseEvent) => {
+    const eng = engineRef.current;
+    if (!eng) return;
+    const r = eng.raycast(ev.clientX, ev.clientY);
+    if (!r) return;
+    const n = r.intersection.normal;
+    const p = r.intersection.point;
+    const pos = eng.orientSection([n.x, n.y, n.z], [p.x, p.y, p.z]);
+    sectionRef.current = true;
+    setSection(true);
+    setSecPos(pos);
+    setSecFlip(false);
+    setStatus("Secțiune creată din față • mută cu slider-ul • „Inversează” pentru cealaltă parte");
+  };
 
-      // One group per property/quantity set. Quantity sets (IfcElementQuantity /
-      // Qto_*) are collected separately so they always render last — after the
-      // IFC attributes and any custom property sets.
-      const qtoGroups: PropGroup[] = [];
-      for (const set of p.psets ?? []) {
-        const isQuantity = set.Quantities != null || /^qto[_.]/i.test(v(set.Name));
-        const rows = (set.HasProperties ?? set.Quantities ?? [])
-          .map((it: any) => ({ k: v(it.Name), v: v(qval(it)) }))
-          .filter((r: PropGroup["rows"][number]) => r.k.length);
-        if (!rows.length) continue;
-        const group = { name: v(set.Name) || "PropertySet", rows };
-        (isQuantity ? qtoGroups : groups).push(group);
-      }
-      groups.push(...qtoGroups);
-
-      setPropGroups(groups);
-      setPropsKey((k) => k + 1);
-    } catch {
-      /* ignore */
-    }
-  }
+  const clearSections = () => {
+    sectionRef.current = false;
+    setSection(false);
+  };
 
   const startPropsResize = (e: ReactMouseEvent) => {
     e.preventDefault();
-    const onMove = (ev: MouseEvent) =>
-      setPropsWidth(Math.min(640, Math.max(260, window.innerWidth - ev.clientX - 16)));
+    const onMove = (ev: MouseEvent) => setPropsWidth(Math.min(640, Math.max(260, window.innerWidth - ev.clientX - 16)));
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
@@ -491,122 +350,6 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   };
-
-  // --- visibility (display subset) ---------------------------------------
-  const setDisplay = (ids: Set<number>) => {
-    const viewer = viewerRef.current;
-    if (!viewer) return;
-    const manager = viewer.IFC.loader.ifcManager;
-    const scene = viewer.context.getScene();
-    const subset = manager.createSubset({ modelID: stateRef.current.modelID, ids: [...ids], applyBVH: true, scene, removePrevious: true, customID: "display" });
-    viewer.context.items.ifcModels = [subset];
-    viewer.context.items.pickableIfcModels = [subset];
-    try {
-      if ((viewer.context.getClippingPlanes?.() ?? []).length) viewer.clipper.updateMaterials();
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const applyVisible = (next: Set<number>) => {
-    visibleRef.current = next;
-    setVisibleIds(next);
-    setDisplay(next);
-    clearSelection();
-  };
-  const hideIds = (ids: number[]) => {
-    const next = new Set(visibleRef.current);
-    for (const id of ids) next.delete(id);
-    applyVisible(next);
-  };
-  const showIds = (ids: number[]) => {
-    const next = new Set(visibleRef.current);
-    for (const id of ids) next.add(id);
-    applyVisible(next);
-  };
-  const isolateIds = (ids: number[]) => applyVisible(new Set(ids));
-  const showAll = () => applyVisible(new Set(stateRef.current.allIDs));
-
-  // --- tools --------------------------------------------------------------
-  const chooseMeasure = (mode: MeasureMode) => {
-    const next = measureMode === mode ? "none" : mode;
-    setMeasureMode(next);
-    measureRef.current?.setMode(next);
-    if (next !== "none" && section) {
-      setSection(false);
-      sectionRef.current = false;
-    }
-    setStatus(
-      next === "length"
-        ? "Lungime: click pe 2 puncte"
-        : next === "point"
-          ? "Punct: click pentru coordonate"
-          : next === "area"
-            ? "Arie: click pe vârfuri, dublu-click pentru a închide"
-            : "Măsurare dezactivată",
-    );
-  };
-
-  const toggleSection = () => {
-    const v = viewerRef.current;
-    if (!v) return;
-    const on = !section;
-    setSection(on);
-    sectionRef.current = on;
-    if (on) {
-      v.clipper.active = true;
-      if (measureMode !== "none") {
-        setMeasureMode("none");
-        measureRef.current?.setMode("none");
-      }
-    }
-    setStatus(on ? "Secțiune: dublu-click pe model pentru un plan" : "Editare secțiune oprită (secțiunea rămâne activă)");
-  };
-
-  const modelBounds = () => {
-    const v = viewerRef.current;
-    const cc = v?.context?.ifcCamera?.cameraControls;
-    const meshes = v?.context?.items?.pickableIfcModels as any[];
-    if (!cc || !meshes?.length) return null;
-    const box = new Box3();
-    for (const m of meshes) box.expandByObject(m);
-    if (box.isEmpty()) return null;
-    return { cc, box, sphere: box.getBoundingSphere(new Sphere()), center: box.getCenter(new Vector3()) };
-  };
-
-  // Fit to the model keeping the current direction.
-  const resetView = () => {
-    try {
-      const b = modelBounds();
-      if (b) b.cc.fitToSphere(b.sphere, true);
-    } catch {
-      /* ignore */
-    }
-  };
-
-  // Standard orthographic-style named views (Y-up scene).
-  const VIEW_DIR: Record<string, [number, number, number]> = {
-    axon: [1, 1, 1],
-    top: [0, 1, 0.0001],
-    bottom: [0, -1, 0.0001],
-    front: [0, 0, 1],
-    back: [0, 0, -1],
-    right: [1, 0, 0],
-    left: [-1, 0, 0],
-  };
-  const applyView = (name: keyof typeof VIEW_DIR) => {
-    try {
-      const b = modelBounds();
-      if (!b) return;
-      const dir = new Vector3(...VIEW_DIR[name]).normalize();
-      const pos = b.center.clone().add(dir.multiplyScalar(b.sphere.radius * 3));
-      b.cc.setLookAt(pos.x, pos.y, pos.z, b.center.x, b.center.y, b.center.z, false);
-      b.cc.fitToSphere(b.sphere, true);
-    } catch {
-      /* ignore */
-    }
-  };
-
   const startTreeResize = (e: ReactMouseEvent) => {
     e.preventDefault();
     const onMove = (ev: MouseEvent) => setTreeWidth(Math.min(560, Math.max(200, ev.clientX - 12)));
@@ -619,6 +362,19 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
   };
 
   const selArr = () => [...selectedIds];
+
+  if (!hasWebGPU) {
+    return (
+      <div className="viewer-wrap">
+        <div className="viewer-main">
+          <div className="alert error" style={{ margin: 24 }}>
+            ⚠️ Vizualizatorul 3D necesită <b>WebGPU</b>, care nu este disponibil în acest browser.
+            Folosiți Chrome/Edge recent (sau Safari 18+). Editarea datelor și exportul funcționează în continuare.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="viewer-wrap">
@@ -641,95 +397,84 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
       <div className="viewer-main">
         <div className="vtoolbar">
           <Dropdown label="Măsurare" icon="📐" active={measureMode !== "none"}>
-            <button className={"vmenu-item" + (measureMode === "length" ? " active" : "")} onClick={() => chooseMeasure("length")}>
-              <span className="ic">📏</span> Lungime
-            </button>
-            <button className={"vmenu-item" + (measureMode === "point" ? " active" : "")} onClick={() => chooseMeasure("point")}>
-              <span className="ic">📍</span> Punct
-            </button>
-            <button className={"vmenu-item" + (measureMode === "area" ? " active" : "")} onClick={() => chooseMeasure("area")}>
-              <span className="ic">▱</span> Arie
-            </button>
+            <button className={"vmenu-item" + (measureMode === "length" ? " active" : "")} onClick={() => chooseMeasure("length")}><span className="ic">📏</span> Lungime</button>
+            <button className={"vmenu-item" + (measureMode === "point" ? " active" : "")} onClick={() => chooseMeasure("point")}><span className="ic">📍</span> Punct</button>
+            <button className={"vmenu-item" + (measureMode === "area" ? " active" : "")} onClick={() => chooseMeasure("area")}><span className="ic">▱</span> Arie</button>
             <div className="vmenu-sep" />
-            <button className="vmenu-item danger" onClick={() => measureRef.current?.clearAll()}>
-              <span className="ic">🗑</span> Șterge măsurătorile
-            </button>
+            <div onClick={(e) => e.stopPropagation()} style={{ padding: "4px 12px", fontSize: 12 }}>
+              <div style={{ opacity: 0.7, margin: "2px 0 4px" }}>Snap la:</div>
+              {([["vertex", "Vârf"], ["midpoint", "Mijloc"], ["edge", "Muchie"], ["face", "Față"]] as const).map(([k, lbl]) => (
+                <label key={k} style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0", cursor: "pointer" }}>
+                  <input type="checkbox" checked={snapOpts[k]} onChange={() => toggleSnap(k)} /> {lbl}
+                </label>
+              ))}
+            </div>
+            <div className="vmenu-sep" />
+            <button className="vmenu-item danger" onClick={() => measureRef.current?.clearAll()}><span className="ic">🗑</span> Șterge măsurătorile</button>
           </Dropdown>
 
           <span className="vsep" />
 
           <Dropdown label="Secțiune" icon="✂️" active={section}>
-            <button className={"vmenu-item" + (section ? " active" : "")} onClick={toggleSection}>
-              <span className="ic">✂️</span> Plan de secțiune
-            </button>
+            <button className={"vmenu-item" + (section ? " active" : "")} onClick={toggleSection}><span className="ic">✂️</span> Plan de secțiune</button>
             <div className="vmenu-sep" />
-            <button className="vmenu-item danger" onClick={() => viewerRef.current?.clipper.deleteAllPlanes()}>
-              <span className="ic">🗑</span> Șterge secțiunile
-            </button>
+            <button className="vmenu-item danger" onClick={clearSections}><span className="ic">🗑</span> Șterge secțiunile</button>
           </Dropdown>
 
           <span className="vsep" />
 
           <Dropdown label="Vizibilitate" icon="👁">
-            <button className="vmenu-item" onClick={() => hideIds(selArr())}>
-              <span className="ic">🙈</span> Ascunde selecția
-            </button>
-            <button className="vmenu-item" onClick={() => isolateIds(selArr())}>
-              <span className="ic">🎯</span> Izolează selecția
-            </button>
-            <button className="vmenu-item" onClick={showAll}>
-              <span className="ic">👁</span> Afișează tot
-            </button>
+            <button className="vmenu-item" onClick={() => hideIds(selArr())}><span className="ic">🙈</span> Ascunde selecția</button>
+            <button className="vmenu-item" onClick={() => isolateIds(selArr())}><span className="ic">🎯</span> Izolează selecția</button>
+            <button className="vmenu-item" onClick={showAll}><span className="ic">👁</span> Afișează tot</button>
           </Dropdown>
 
           <span className="vsep" />
 
           <Dropdown label="Vederi" icon="🎥">
-            <button className="vmenu-item" onClick={() => applyView("axon")}>
-              <span className="ic">🧊</span> Axonometric
-            </button>
-            <button className="vmenu-item" onClick={() => applyView("top")}>
-              <span className="ic">⬇️</span> De sus
-            </button>
-            <button className="vmenu-item" onClick={() => applyView("front")}>
-              <span className="ic">⬛</span> Față
-            </button>
-            <button className="vmenu-item" onClick={() => applyView("left")}>
-              <span className="ic">◀️</span> Stânga
-            </button>
-            <button className="vmenu-item" onClick={() => applyView("back")}>
-              <span className="ic">⬜</span> Spate
-            </button>
-            <button className="vmenu-item" onClick={() => applyView("right")}>
-              <span className="ic">▶️</span> Dreapta
-            </button>
-            <button className="vmenu-item" onClick={() => applyView("bottom")}>
-              <span className="ic">⬆️</span> De jos
-            </button>
+            <button className="vmenu-item" onClick={() => engineRef.current?.fit()}><span className="ic">🧊</span> Axonometric</button>
+            <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("top")}><span className="ic">⬇️</span> De sus</button>
+            <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("front")}><span className="ic">⬛</span> Față</button>
+            <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("left")}><span className="ic">◀️</span> Stânga</button>
+            <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("back")}><span className="ic">⬜</span> Spate</button>
+            <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("right")}><span className="ic">▶️</span> Dreapta</button>
+            <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("bottom")}><span className="ic">⬆️</span> De jos</button>
             <div className="vmenu-sep" />
-            <button className="vmenu-item" onClick={resetView}>
-              <span className="ic">⤢</span> Încadrează tot
-            </button>
+            <button className="vmenu-item" onClick={() => engineRef.current?.fit()}><span className="ic">⤢</span> Încadrează tot</button>
           </Dropdown>
         </div>
 
-        <div className="viewer-host" ref={hostRef}>
-          <div data-testid="viewer-status" className="viewer-status">
-            {status}
-          </div>
+        <div className="viewer-host" ref={hostRef} style={{ position: "relative" }}>
+          <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
+          {section && (
+            <div className="section-ctl" style={sectionCtlStyle}>
+              <span style={{ fontSize: 12, opacity: 0.85 }}>Dublu-click pe o față pentru a crea secțiunea</span>
+              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 12 }}>Poziție</span>
+                <input
+                  type="range" min={0} max={100} value={secPos}
+                  onChange={(e) => { const v = Number(e.target.value); setSecPos(v); engineRef.current?.sectionSetPos(v); }}
+                  style={{ width: 160 }}
+                />
+                <span style={{ fontSize: 12, width: 32 }}>{secPos}%</span>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+                <input
+                  type="checkbox" checked={secFlip}
+                  onChange={(e) => { setSecFlip(e.target.checked); engineRef.current?.sectionSetFlipped(e.target.checked); }}
+                /> Inversează
+              </label>
+            </div>
+          )}
+          <div data-testid="viewer-status" className="viewer-status">{status}</div>
         </div>
       </div>
 
-      {/* Always docked so selecting/deselecting doesn't resize the viewer (no bounce). */}
       <aside className="props-panel" style={{ width: propsWidth }}>
         <div className="props-resize" onMouseDown={startPropsResize} title="Trageți pentru redimensionare" />
         <div className="props-head">
           <span>{propGroups ? "Proprietăți element" : "Informații model"}</span>
-          {propGroups && (
-            <span className="props-close" onClick={clearSelection} title="Deselectează">
-              ×
-            </span>
-          )}
+          {propGroups && <span className="props-close" onClick={clearSelection} title="Deselectează">×</span>}
         </div>
         <div className="props-body">
           {propGroups ? (
@@ -737,41 +482,29 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
               {selHeader && (
                 <div className="sel-header">
                   <div className="sel-title">
-                    <div className="sel-name" title={selHeader.name}>
-                      {selHeader.name || "(fără nume)"}
-                    </div>
+                    <div className="sel-name" title={selHeader.name}>{selHeader.name || "(fără nume)"}</div>
                     {selHeader.type && <div className="sel-type">{selHeader.type}</div>}
                   </div>
                   <div className="sel-actions">
-                    <button className="sel-btn" title="Încadrează pe element" onClick={zoomToSelection}>
+                    <button className="sel-btn" title="Încadrează pe element" onClick={() => engineRef.current?.zoomToSelection(selectedRef.current)}>
                       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                        <circle cx="12" cy="12" r="4" />
-                        <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+                        <circle cx="12" cy="12" r="4" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
                       </svg>
                     </button>
                     <button className="sel-btn" title="Ascunde elementul" onClick={hideSelection}>
                       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z" />
-                        <circle cx="12" cy="12" r="2.6" />
-                        <path d="M3 3l18 18" />
+                        <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z" /><circle cx="12" cy="12" r="2.6" /><path d="M3 3l18 18" />
                       </svg>
                     </button>
                   </div>
                 </div>
               )}
-              <PropAccordion
-                key={propsKey}
-                groups={propGroups}
-                favorites={favorites}
-                onToggleFavorite={onToggleFavorite}
-              />
+              <PropAccordion key={propsKey} groups={propGroups} favorites={favorites} onToggleFavorite={onToggleFavorite} />
             </>
           ) : fileInfo ? (
             <FileInfoPanel info={fileInfo} />
           ) : (
-            <div className="props-empty">
-              Selectați un element în viewer sau în arbore pentru a-i vedea proprietățile.
-            </div>
+            <div className="props-empty">Selectați un element în viewer sau în arbore pentru a-i vedea proprietățile.</div>
           )}
         </div>
       </aside>
@@ -779,31 +512,9 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
   );
 }
 
-function clearOutline(group: Group) {
-  for (const c of [...group.children]) {
-    group.remove(c);
-    const any = c as any;
-    any.geometry?.dispose?.();
-    any.material?.dispose?.();
-  }
-}
+// Spatial containers are never grouped; element children are grouped by IFC class.
+const SPATIAL_TYPES = new Set(["IFCPROJECT", "IFCSITE", "IFCBUILDING", "IFCBUILDINGSTOREY", "IFCSPACE"]);
 
-// Spatial containers form the structural backbone and are never grouped; every
-// other (element) child of a container is grouped under its IFC class.
-const SPATIAL_TYPES = new Set([
-  "IFCPROJECT",
-  "IFCSITE",
-  "IFCBUILDING",
-  "IFCBUILDINGSTOREY",
-  "IFCSPACE",
-]);
-
-/**
- * Rewrite the spatial tree so that the element children of each container are
- * grouped into synthetic "class group" nodes (e.g. "Pile (120)"). Spatial
- * containers stay expanded by default; the class groups start collapsed so a
- * storey with hundreds of identical elements reads as a short class list.
- */
 function groupByClass(node: TreeNode, ctr: { n: number }): TreeNode {
   const children = node.children.map((c) => groupByClass(c, ctr));
   const containers: TreeNode[] = [];
@@ -825,139 +536,5 @@ function groupByClass(node: TreeNode, ctr: { n: number }): TreeNode {
     }
     groups.sort((a, b) => a.type.localeCompare(b.type));
   }
-
   return { ...node, children: [...containers, ...groups], defaultOpen: true };
-}
-
-/**
- * Resolve an entity's IFC type name. web-ifc-viewer's getSpatialStructure returns
- * "<web-ifc-type-unknown>" for IFC4X3 entities (IfcSite, IfcBuiltElement, …), but
- * GetLineType + GetNameFromTypeCode resolves them correctly, so re-derive it here.
- */
-function resolveTypeName(api: any, modelID: number, expressID: number, fallback: string): string {
-  try {
-    const name = api.GetNameFromTypeCode(api.GetLineType(modelID, expressID));
-    if (name && !name.startsWith("<")) return name;
-  } catch {
-    /* ignore */
-  }
-  return fallback;
-}
-
-function toTreeNode(node: any, allSet: Set<number>, api: any, modelID: number): TreeNode {
-  const children = (node.children ?? []).map((c: any) => toTreeNode(c, allSet, api, modelID));
-  const ids: number[] = [];
-  if (allSet.has(node.expressID)) ids.push(node.expressID);
-  for (const c of children) ids.push(...c.ids);
-  return {
-    expressID: node.expressID,
-    type: resolveTypeName(api, modelID, node.expressID, node.type),
-    name: node.Name?.value ?? node.LongName?.value ?? "",
-    ids,
-    children,
-  };
-}
-
-/** "IFCCOLUMN" → "IfcColumn" for the element title (single-word types are exact). */
-function prettyIfcType(t: string): string {
-  if (!t) return "";
-  if (/^IFC/i.test(t)) {
-    const rest = t.slice(3);
-    return "Ifc" + rest.charAt(0).toUpperCase() + rest.slice(1).toLowerCase();
-  }
-  return t;
-}
-
-/**
- * Build the general model overview. The location pin is the model centroid (in
- * IFC coordinates, recovered from the scene-space recenter offset) run through
- * the IfcMapConversion if present, then projected to WGS84 — but only when it
- * falls inside Romania's Stereo 70 extents, so non-georeferenced models don't
- * show a bogus pin.
- */
-function gatherFileInfo(
-  api: any,
-  modelID: number,
-  elementsWithGeometry: number,
-  centroidScene: Vector3,
-  byteLength: number,
-  fileName: string,
-  georef: GeorefInfo | null,
-): FileInfo {
-  const sval = (x: any) => (x && x.value != null ? String(x.value) : "");
-  const count = (t: number) => {
-    try {
-      return api.GetLineIDsWithType(modelID, t).size();
-    } catch {
-      return 0;
-    }
-  };
-
-  let totalEntities = 0;
-  try {
-    totalEntities = api.GetAllLines(modelID).size();
-  } catch {
-    /* ignore */
-  }
-
-  let projectName = "";
-  let projectGlobalId = "";
-  try {
-    const pids = api.GetLineIDsWithType(modelID, IFCPROJECT);
-    if (pids.size()) {
-      const pr = api.GetLine(modelID, pids.get(0));
-      projectName = sval(pr.Name) || sval(pr.LongName);
-      projectGlobalId = sval(pr.GlobalId);
-    }
-  } catch {
-    /* ignore */
-  }
-
-  // Scene is Y-up: scene (ifcX, ifcZ, -ifcY). Recover the model-frame centroid.
-  const ifcX = centroidScene.x;
-  const ifcY = -centroidScene.z;
-  let E = ifcX;
-  let N = ifcY;
-  if (georef) {
-    const t = (georef.rotationDeg * Math.PI) / 180;
-    const ca = Math.cos(t);
-    const sa = Math.sin(t);
-    E = georef.eastings + georef.scale * (ifcX * ca - ifcY * sa);
-    N = georef.northings + georef.scale * (ifcX * sa + ifcY * ca);
-  }
-  const b = STEREO70_BOUNDS;
-  let location: FileInfo["location"] = null;
-  if (E >= b.eMin && E <= b.eMax && N >= b.nMin && N <= b.nMax) {
-    const { lonDeg, latDeg } = stereo70ToWgs84(E, N);
-    location = { lat: latDeg, lon: lonDeg, crs: georef?.crsName || STEREO70.name };
-  }
-
-  return {
-    fileName,
-    fileSizeKB: byteLength / 1024,
-    schema: api.GetModelSchema(modelID) || "—",
-    projectName,
-    projectGlobalId,
-    totalEntities,
-    buildingStoreys: count(IFCBUILDINGSTOREY),
-    elementsWithGeometry,
-    location,
-  };
-}
-
-function installDisplaySubset(viewer: any, model: any, allIDs: number[]) {
-  const subset = viewer.IFC.loader.ifcManager.createSubset({
-    modelID: model.modelID,
-    ids: allIDs,
-    applyBVH: true,
-    scene: model.parent,
-    removePrevious: true,
-    customID: "display",
-  });
-  const items = viewer.context.items;
-  items.pickableIfcModels = items.pickableIfcModels.filter((m: any) => m !== model);
-  items.ifcModels = items.ifcModels.filter((m: any) => m !== model);
-  model.removeFromParent();
-  items.ifcModels.push(subset);
-  items.pickableIfcModels.push(subset);
 }

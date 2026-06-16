@@ -6,3 +6,7 @@ dist-ssr
 _e2e_*.png
 e2e*.mjs
 .claude/settings.local.json
+
+# POC browser-harness generated artifacts (screenshots + logs)
+poc/browser/*.png
+poc/browser/*.log
