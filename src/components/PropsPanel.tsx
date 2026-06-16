@@ -9,8 +9,126 @@ export interface PropGroup {
   rows: PropRow[];
 }
 
-/** Collapsible accordion: one section per property set (+ an "Atribute" section). */
-export function PropAccordion({ groups }: { groups: PropGroup[] }) {
+/** General model/file info shown in the right panel when nothing is selected. */
+export interface FileInfo {
+  fileName: string;
+  fileSizeKB: number;
+  schema: string;
+  projectName: string;
+  projectGlobalId: string;
+  totalEntities: number;
+  buildingStoreys: number;
+  elementsWithGeometry: number;
+  /** WGS84 location of the model + the projected CRS it was derived from. */
+  location: { lat: number; lon: number; crs: string } | null;
+}
+
+function InfoRow({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="finfo-row">
+      <span className="finfo-k">{k}</span>
+      <span className="finfo-v">{v}</span>
+    </div>
+  );
+}
+
+/**
+ * File/model overview + an interactive location map (inspired by ifclite). The
+ * map is an embedded OpenStreetMap frame with a marker; the links open the same
+ * point in Google Maps / OpenStreetMap / Google Earth.
+ */
+export function FileInfoPanel({ info }: { info: FileInfo }) {
+  const loc = info.location;
+  const n = (x: number) => Math.round(x).toLocaleString("ro-RO");
+  const mapSrc = loc
+    ? `https://www.openstreetmap.org/export/embed.html?bbox=${loc.lon - 0.012}%2C${
+        loc.lat - 0.006
+      }%2C${loc.lon + 0.012}%2C${loc.lat + 0.006}&layer=mapnik&marker=${loc.lat}%2C${loc.lon}`
+    : "";
+
+  return (
+    <div className="finfo">
+      <div className="finfo-sec">
+        <h4>Informații fișier</h4>
+        <InfoRow k="Nume" v={info.fileName} />
+        <InfoRow k="Dimensiune" v={`${n(info.fileSizeKB)} KB`} />
+        <InfoRow k="Schemă" v={info.schema} />
+      </div>
+
+      {(info.projectName || info.projectGlobalId) && (
+        <div className="finfo-sec">
+          <h4>Informații proiect</h4>
+          {info.projectName && <InfoRow k="Nume" v={info.projectName} />}
+          {info.projectGlobalId && <InfoRow k="GlobalId" v={info.projectGlobalId} />}
+        </div>
+      )}
+
+      <div className="finfo-sec">
+        <h4>Statistici</h4>
+        <InfoRow k="Total entități" v={n(info.totalEntities)} />
+        <InfoRow k="Niveluri (storeys)" v={n(info.buildingStoreys)} />
+        <InfoRow k="Elemente cu geometrie" v={n(info.elementsWithGeometry)} />
+      </div>
+
+      {loc && (
+        <div className="finfo-sec">
+          <h4>Locație</h4>
+          <InfoRow k="Sistem de coordonate" v={loc.crs} />
+          <InfoRow k="Coordonate (lat, lon)" v={`${loc.lat.toFixed(5)}, ${loc.lon.toFixed(5)}`} />
+          <div className="finfo-map">
+            <iframe
+              title="Hartă locație"
+              className="finfo-map-frame"
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+              src={mapSrc}
+            />
+          </div>
+          <div className="finfo-attrib">© OpenStreetMap</div>
+          <div className="finfo-links">
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${loc.lat}%2C${loc.lon}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Google Maps
+            </a>
+            <a
+              href={`https://www.openstreetmap.org/?mlat=${loc.lat}&mlon=${loc.lon}#map=17/${loc.lat}/${loc.lon}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              OpenStreetMap
+            </a>
+            <a
+              href={`https://earth.google.com/web/search/${loc.lat},${loc.lon}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Google Earth
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface Props {
+  groups: PropGroup[];
+  /** Favorited property names (shared across element selections). */
+  favorites: Set<string>;
+  onToggleFavorite: (key: string) => void;
+}
+
+/**
+ * Collapsible accordion: one section per property set (+ an "Atribute" section).
+ * Each row can be starred as a favorite. Favorited properties are mirrored in an
+ * always-open "Favorite" section pinned at the top, so they stay visible when
+ * switching from one element to another (the per-set sections collapse on each
+ * new selection, but favorites persist).
+ */
+export function PropAccordion({ groups, favorites, onToggleFavorite }: Props) {
   // Default: first group (Atribute) open, the rest collapsed.
   const [open, setOpen] = useState<Set<string>>(() => new Set(groups[0] ? [groups[0].name] : []));
   const toggle = (n: string) =>
@@ -20,8 +138,63 @@ export function PropAccordion({ groups }: { groups: PropGroup[] }) {
       return x;
     });
 
+  // Build the pinned favourites list from the current element's rows (first
+  // occurrence per property name wins).
+  const favRows: PropRow[] = [];
+  const seen = new Set<string>();
+  for (const g of groups) {
+    for (const r of g.rows) {
+      if (favorites.has(r.k) && !seen.has(r.k)) {
+        seen.add(r.k);
+        favRows.push(r);
+      }
+    }
+  }
+
+  const star = (k: string) => {
+    const fav = favorites.has(k);
+    return (
+      <button
+        type="button"
+        className={"pacc-star" + (fav ? " on" : "")}
+        title={fav ? "Elimină din favorite" : "Adaugă la favorite"}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleFavorite(k);
+        }}
+      >
+        {fav ? "★" : "☆"}
+      </button>
+    );
+  };
+
+  const rows = (rs: PropRow[]) => (
+    <table className="pacc-table">
+      <tbody>
+        {rs.map((r, i) => (
+          <tr key={i}>
+            <td className="pacc-starcell">{star(r.k)}</td>
+            <td className="k">{r.k}</td>
+            <td>{r.v}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+
   return (
     <div>
+      {favRows.length > 0 && (
+        <div className="pacc pacc-fav">
+          <div className="pacc-head pacc-head-static">
+            <span className="pacc-caret">★</span>
+            <span className="pacc-name">Favorite</span>
+            <span className="pacc-count">{favRows.length}</span>
+          </div>
+          {rows(favRows)}
+        </div>
+      )}
+
       {groups.map((g) => {
         const isOpen = open.has(g.name);
         return (
@@ -33,18 +206,7 @@ export function PropAccordion({ groups }: { groups: PropGroup[] }) {
               </span>
               <span className="pacc-count">{g.rows.length}</span>
             </button>
-            {isOpen && (
-              <table className="pacc-table">
-                <tbody>
-                  {g.rows.map((r, i) => (
-                    <tr key={i}>
-                      <td className="k">{r.k}</td>
-                      <td>{r.v}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+            {isOpen && rows(g.rows)}
           </div>
         );
       })}

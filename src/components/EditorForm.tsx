@@ -10,12 +10,13 @@ interface Props {
   sites: SiteInfo[];
   beneficiar: BeneficiarInfo | null;
   fileName: string;
+  onAddSite?: () => void;
   onGeorefChange?: (g: GeorefInfo) => void;
 }
 
 type SummaryRow = [string, string];
 
-export function EditorForm({ editor, project, sites, beneficiar, fileName, onGeorefChange }: Props) {
+export function EditorForm({ editor, project, sites, beneficiar, fileName, onAddSite, onGeorefChange }: Props) {
   const [projName, setProjName] = useState(project.name);
   const [projLong, setProjLong] = useState(project.longName);
   const [benIsOrg, setBenIsOrg] = useState(beneficiar?.isOrg ?? false);
@@ -36,6 +37,8 @@ export function EditorForm({ editor, project, sites, beneficiar, fileName, onGeo
   const [height, setHeight] = useState("");
   const [rotationDeg, setRotationDeg] = useState("");
   const [scale, setScale] = useState("");
+  // Georeferencing is an advanced section — collapsed by default.
+  const [geoOpen, setGeoOpen] = useState(false);
 
   const [summary, setSummary] = useState<SummaryRow[] | null>(null);
   const [download, setDownload] = useState<{ url: string; name: string } | null>(null);
@@ -85,27 +88,32 @@ export function EditorForm({ editor, project, sites, beneficiar, fileName, onGeo
       rows.push(["Beneficiar", `${benName.trim()} (${benIsOrg ? "juridică" : "fizică"})`]);
     }
 
-    editor.setPsetValue(site.expressID, PSET_LAND, "LandTitleID", landTitleId);
-    editor.setPsetValue(site.expressID, PSET_LAND, "LandId", landId);
-    rows.push(["Nr. Cărții funciare", landTitleId], ["Nr. Cadastral", landId]);
-
     const regionVal = region === JUDET_PROMPT ? "" : region;
-    const address: Record<string, string> = {
-      Street: street,
-      Town: town,
-      Region: regionVal,
-      PostalCode: postalCode,
-      Country: "Romania",
-    };
-    for (const [k, v] of Object.entries(address))
-      editor.setPsetValue(site.expressID, PSET_ADDRESS, k, v);
-    rows.push(
-      ["Stradă", street],
-      ["Oraș", town],
-      ["Județ", regionVal],
-      ["Cod poștal", postalCode],
-      ["Țară", "Romania"],
-    );
+    // Land-registration and address data live on the IfcSite. Without one there
+    // is nothing to attach them to, so we skip these rows (the "Teren" card
+    // prompts the user to add a site).
+    if (site) {
+      editor.setPsetValue(site.expressID, PSET_LAND, "LandTitleID", landTitleId);
+      editor.setPsetValue(site.expressID, PSET_LAND, "LandId", landId);
+      rows.push(["Nr. Cărții funciare", landTitleId], ["Nr. Cadastral", landId]);
+
+      const address: Record<string, string> = {
+        Street: street,
+        Town: town,
+        Region: regionVal,
+        PostalCode: postalCode,
+        Country: "Romania",
+      };
+      for (const [k, v] of Object.entries(address))
+        editor.setPsetValue(site.expressID, PSET_ADDRESS, k, v);
+      rows.push(
+        ["Stradă", street],
+        ["Oraș", town],
+        ["Județ", regionVal],
+        ["Cod poștal", postalCode],
+        ["Țară", "Romania"],
+      );
+    }
 
     // Georeferencing: only write when the user supplied an origin (Est + Nord).
     if (georefSupported && eastings.trim() && northings.trim()) {
@@ -124,8 +132,8 @@ export function EditorForm({ editor, project, sites, beneficiar, fileName, onGeo
       onGeorefChange?.(g);
       rows.push(
         ["Sistem de coordonate", STEREO70.name + " (Stereo 70)"],
-        ["Est (Y)", String(g.eastings)],
-        ["Nord (X)", String(g.northings)],
+        ["Est (X)", String(g.eastings)],
+        ["Nord (Y)", String(g.northings)],
         ["Cotă (H)", String(g.height)],
         ["Rotație la nord", g.rotationDeg + "°"],
         ["Scară", String(g.scale)],
@@ -187,20 +195,34 @@ export function EditorForm({ editor, project, sites, beneficiar, fileName, onGeo
 
       <div className="card">
         <h3>Teren</h3>
-        <div className="field">
-          <label>IfcSite</label>
-          <select value={siteIdx} onChange={(e) => setSiteIdx(Number(e.target.value))}>
-            {sites.map((s, i) => (
-              <option key={s.expressID} value={i}>
-                {(s.name || "(Sit fără nume)") + " – " + s.globalId}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="row">
-          <Field label="Nr. Cărții funciare" value={landTitleId} onChange={setLandTitleId} />
-          <Field label="Nr. Cadastral" value={landId} onChange={setLandId} />
-        </div>
+        {sites.length === 0 ? (
+          <>
+            <div className="alert warn">
+              ⚠️ Modelul nu conține niciun IfcSite. Adăugați unul pentru a putea completa datele de
+              carte funciară și adresă.
+            </div>
+            <button className="btn" onClick={onAddSite} data-testid="add-site-btn">
+              ➕ Adaugă IfcSite
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="field">
+              <label>IfcSite</label>
+              <select value={siteIdx} onChange={(e) => setSiteIdx(Number(e.target.value))}>
+                {sites.map((s, i) => (
+                  <option key={s.expressID} value={i}>
+                    {(s.name || "(Sit fără nume)") + " – " + s.globalId}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="row">
+              <Field label="Nr. Cărții funciare" value={landTitleId} onChange={setLandTitleId} />
+              <Field label="Nr. Cadastral" value={landId} onChange={setLandId} />
+            </div>
+          </>
+        )}
       </div>
 
       <div className="card">
@@ -225,27 +247,40 @@ export function EditorForm({ editor, project, sites, beneficiar, fileName, onGeo
       </div>
 
       <div className="card">
-        <h3>Georeferențiere (Stereo 70)</h3>
-        {georefSupported ? (
-          <>
-            <div className="field">
-              <label>Sistem de coordonate</label>
-              <input value={`${STEREO70.name} – Stereo 70`} readOnly disabled />
-            </div>
-            <div className="row">
-              <Field label="Est (Y)" value={eastings} onChange={setEastings} />
-              <Field label="Nord (X)" value={northings} onChange={setNorthings} />
-            </div>
-            <div className="row">
-              <Field label="Cotă (H)" value={height} onChange={setHeight} />
-              <Field label="Rotație la nord (°)" value={rotationDeg} onChange={setRotationDeg} />
-              <Field label="Scară" value={scale} onChange={setScale} />
-            </div>
-          </>
-        ) : (
-          <div className="alert warn">
-            ⚠️ Georeferențierea (IfcMapConversion) este disponibilă doar pentru fișiere IFC4. Acest
-            model folosește o schemă IFC2x3.
+        <button
+          type="button"
+          className="card-toggle"
+          onClick={() => setGeoOpen((v) => !v)}
+          aria-expanded={geoOpen}
+          data-testid="georef-toggle"
+        >
+          <h3>Georeferențiere (Stereo 70)</h3>
+          <span className={"card-caret" + (geoOpen ? " open" : "")}>⌄</span>
+        </button>
+        {geoOpen && (
+          <div className="card-body">
+            {georefSupported ? (
+              <>
+                <div className="field">
+                  <label>Sistem de coordonate</label>
+                  <input value={`${STEREO70.name} – Stereo 70`} readOnly disabled />
+                </div>
+                <div className="row">
+                  <Field label="Est (X)" value={eastings} onChange={setEastings} />
+                  <Field label="Nord (Y)" value={northings} onChange={setNorthings} />
+                </div>
+                <div className="row">
+                  <Field label="Cotă (H)" value={height} onChange={setHeight} />
+                  <Field label="Rotație la nord (°)" value={rotationDeg} onChange={setRotationDeg} />
+                  <Field label="Scară" value={scale} onChange={setScale} />
+                </div>
+              </>
+            ) : (
+              <div className="alert warn">
+                ⚠️ Georeferențierea (IfcMapConversion) este disponibilă doar pentru fișiere IFC4.
+                Acest model folosește o schemă IFC2x3.
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -11,6 +11,7 @@ import {
   IfcAPI,
   IFCPROJECT,
   IFCSITE,
+  IFCRELAGGREGATES,
   IFCPROPERTYSET,
   IFCPROPERTYSINGLEVALUE,
   IFCRELDEFINESBYPROPERTIES,
@@ -30,6 +31,7 @@ import { BENEFICIAR_REL_NAME, STEREO70 } from "./constants";
 
 const REF = 5;
 const STR = 1;
+const ENUM = 3;
 
 export interface ProjectInfo {
   expressID: number;
@@ -48,9 +50,9 @@ export interface BeneficiarInfo {
 export interface GeorefInfo {
   /** Projected CRS name, e.g. "EPSG:3844". */
   crsName: string;
-  /** Eastings (Y / Est) of the model origin in the projected CRS. */
+  /** Eastings (X / Est) of the model origin in the projected CRS. */
   eastings: number;
-  /** Northings (X / Nord) of the model origin in the projected CRS. */
+  /** Northings (Y / Nord) of the model origin in the projected CRS. */
   northings: number;
   /** Orthogonal height (cotă) of the model origin. */
   height: number;
@@ -83,6 +85,122 @@ function stepReal(n: number): string {
   return s;
 }
 
+/** Decode bytes as latin1 so every byte maps 1:1 to a char code (round-trips). */
+function decodeLatin1(bytes: Uint8Array): string {
+  return new TextDecoder("latin1").decode(bytes);
+}
+/** Inverse of decodeLatin1 — byte-perfect, so untouched original lines survive. */
+function encodeLatin1(s: string): Uint8Array {
+  const a = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i) & 0xff;
+  return a;
+}
+
+/** Repair web-ifc's malformed reals like "1.71646E+09." (invalid trailing dot). */
+function sanitizeReals(s: string): string {
+  return s.replace(/(E[+-]?\d+)\./gi, "$1");
+}
+
+/**
+ * Split a STEP DATA-section body into `#id=…;` records, respecting single-quoted
+ * strings (so a ';' inside a label doesn't end a record early). Returns records
+ * in file order, each including its trailing ';'.
+ */
+function splitRecords(body: string): { id: number; text: string }[] {
+  const recs: { id: number; text: string }[] = [];
+  let i = 0;
+  const n = body.length;
+  while (i < n) {
+    while (i < n && /\s/.test(body[i])) i++;
+    if (i >= n || body[i] !== "#") {
+      i++;
+      continue;
+    }
+    const start = i;
+    let inStr = false;
+    for (; i < n; i++) {
+      const c = body[i];
+      if (inStr) {
+        if (c === "'") {
+          if (body[i + 1] === "'") i++; // escaped quote
+          else inStr = false;
+        }
+      } else if (c === "'") {
+        inStr = true;
+      } else if (c === ";") {
+        i++;
+        break;
+      }
+    }
+    const text = body.slice(start, i).trim();
+    const m = /^#(\d+)=/.exec(text);
+    if (m) recs.push({ id: Number(m[1]), text });
+  }
+  return recs;
+}
+
+/** Map expressID → record text for a STEP file's DATA section. */
+function recordsMap(text: string): Map<number, string> {
+  const map = new Map<number, string>();
+  const ds = text.indexOf("DATA;");
+  const es = ds >= 0 ? text.indexOf("ENDSEC;", ds) : -1;
+  if (ds < 0 || es < 0) return map;
+  for (const r of splitRecords(text.slice(ds + 5, es))) map.set(r.id, r.text);
+  return map;
+}
+
+/**
+ * Rebuild a STEP file from the original text, replacing only the `touched`
+ * existing records with their freshly-serialised versions and appending the
+ * newly-created ones — leaving all other (geometry/placement/owner-history)
+ * lines exactly as authored.
+ */
+function spliceRecords(
+  originalText: string,
+  touched: Set<number>,
+  baseMaxId: number,
+  out: Map<number, string>,
+): string {
+  const ds = originalText.indexOf("DATA;");
+  const es = ds >= 0 ? originalText.indexOf("ENDSEC;", ds) : -1;
+  if (ds < 0 || es < 0) return sanitizeReals(originalText); // not parseable — leave as is
+  const head = originalText.slice(0, ds + 5);
+  const body = originalText.slice(ds + 5, es);
+  const foot = originalText.slice(es);
+
+  const records = splitRecords(body);
+  const seen = new Set<number>();
+  const lines: string[] = [];
+  for (const r of records) {
+    seen.add(r.id);
+    if (touched.has(r.id) && out.has(r.id)) lines.push(sanitizeReals(out.get(r.id)!));
+    else lines.push(r.text);
+  }
+  // Append created lines (ascending id) that weren't in the original.
+  const created = [...touched].filter((id) => id > baseMaxId && !seen.has(id) && out.has(id));
+  created.sort((a, b) => a - b);
+  for (const id of created) lines.push(sanitizeReals(out.get(id)!));
+
+  return head + "\n" + lines.join("\n") + "\n" + foot;
+}
+
+/** Re-inject full-precision georef into the (single) IfcMapConversion line. */
+function patchMapConversionText(text: string, g: GeorefInfo): string {
+  const re = /(#\d+=IFCMAPCONVERSION\()([^)]*)(\)\s*;)/i;
+  const m = text.match(re);
+  if (!m) return text;
+  const args = m[2].split(",");
+  if (args.length < 8) return text; // 2 refs + 6 reals expected
+  const theta = (g.rotationDeg * Math.PI) / 180;
+  args[2] = stepReal(g.eastings);
+  args[3] = stepReal(g.northings);
+  args[4] = stepReal(g.height);
+  args[5] = stepReal(Math.cos(theta));
+  args[6] = stepReal(Math.sin(theta));
+  args[7] = stepReal(g.scale);
+  return text.replace(re, `$1${args.join(",")}$3`);
+}
+
 export class IfcEditor {
   private nextId: number;
   /**
@@ -93,11 +211,21 @@ export class IfcEditor {
    */
   private georefExact: GeorefInfo | null = null;
 
+  /** The original file as STEP text (latin1) — kept verbatim on export. */
+  private originalText: string;
+  /** Max expressID present in the original file; anything above is a new line. */
+  private baseMaxId: number;
+  /** ExpressIDs we created or modified, so export only re-serialises those. */
+  private touched = new Set<number>();
+
   private constructor(
     private api: IfcAPI,
     public modelID: number,
+    bytes: Uint8Array,
   ) {
     this.nextId = api.GetMaxExpressID(modelID);
+    this.baseMaxId = this.nextId;
+    this.originalText = decodeLatin1(bytes);
   }
 
   static open(api: IfcAPI, bytes: Uint8Array): IfcEditor {
@@ -105,7 +233,13 @@ export class IfcEditor {
     // web-ifc 0.0.39 can't map an "IFC4X3" header to its schema table; fix it
     // so GetLine works for IFC4X3 site/infrastructure files.
     resolveModelSchema(api, modelID, bytes);
-    return new IfcEditor(api, modelID);
+    return new IfcEditor(api, modelID, bytes);
+  }
+
+  /** Write a line and remember its expressID so export() re-serialises it. */
+  private writeLine(line: any): void {
+    this.api.WriteLine(this.modelID, line);
+    if (typeof line?.expressID === "number") this.touched.add(line.expressID);
   }
 
   schema(): string {
@@ -116,33 +250,43 @@ export class IfcEditor {
     this.api.CloseModel(this.modelID);
   }
 
+  /**
+   * Export the enriched model. We do NOT round-trip the whole model through
+   * web-ifc's serialiser — its 0.0.39 build writes large numbers with only ~6
+   * significant figures AND an invalid trailing dot (e.g. 1716464774 →
+   * "1.71646E+09."), which both distorts placement geometry and produces files
+   * other viewers reject. Instead we keep every original line byte-for-byte and
+   * splice in only the handful of lines we created/modified (taken from web-ifc's
+   * output), then re-inject full georef precision.
+   */
   export(): Uint8Array {
-    const bytes = this.api.ExportFileAsIFC(this.modelID);
-    return this.georefExact ? this.patchMapConversion(bytes, this.georefExact) : bytes;
+    let text = this.originalText;
+    if (this.touched.size) {
+      const outText = decodeLatin1(this.saveModel());
+      const out = recordsMap(outText);
+      text = spliceRecords(this.originalText, this.touched, this.baseMaxId, out);
+    }
+    if (this.georefExact) text = patchMapConversionText(text, this.georefExact);
+    return encodeLatin1(text);
   }
 
   /**
-   * Rewrite the numeric arguments of the (single) IfcMapConversion line with
-   * full precision, working around web-ifc's ~6-significant-figure REAL output.
-   * The STEP text is pure ASCII (diacritics are \X2\…\X0\ escaped), so a
-   * utf-8 round-trip is safe.
+   * Serialise the model to IFC bytes. web-ifc 0.0.39's SaveModel/ExportFileAsIFC
+   * pre-sizes its output buffer from GetModelSize() + 512 bytes, but that count
+   * is too small once we add lines (psets, georef, a new site …), so its internal
+   * `dataBuffer.set(src)` throws "offset is out of bounds". We bypass that by
+   * driving the WASM serializer directly and allocating exactly the bytes it
+   * returns. Falls back to the library call if the internal module isn't exposed.
    */
-  private patchMapConversion(bytes: Uint8Array, g: GeorefInfo): Uint8Array {
-    const text = new TextDecoder().decode(bytes);
-    const re = /(#\d+=IFCMAPCONVERSION\()([^)]*)(\)\s*;)/i;
-    const m = text.match(re);
-    if (!m) return bytes;
-    const args = m[2].split(",");
-    if (args.length < 8) return bytes; // 2 refs + 6 reals expected
-    const theta = (g.rotationDeg * Math.PI) / 180;
-    args[2] = stepReal(g.eastings);
-    args[3] = stepReal(g.northings);
-    args[4] = stepReal(g.height);
-    args[5] = stepReal(Math.cos(theta));
-    args[6] = stepReal(Math.sin(theta));
-    args[7] = stepReal(g.scale);
-    const patched = text.replace(re, `$1${args.join(",")}$3`);
-    return new TextEncoder().encode(patched);
+  private saveModel(): Uint8Array {
+    const wasm = (this.api as any).wasmModule;
+    if (!wasm?.SaveModel || !wasm?.HEAPU8) return this.api.SaveModel(this.modelID);
+    let out = new Uint8Array(0);
+    wasm.SaveModel(this.modelID, (srcPtr: number, srcSize: number) => {
+      out = new Uint8Array(srcSize);
+      out.set(wasm.HEAPU8.subarray(srcPtr, srcPtr + srcSize), 0);
+    });
+    return out;
   }
 
   // --- id / value helpers -------------------------------------------------
@@ -169,6 +313,9 @@ export class IfcEditor {
   }
   private str(value: string): any {
     return { value, type: STR };
+  }
+  private enumVal(value: string): any {
+    return { value, type: ENUM };
   }
   private label(value: string): any {
     return this.api.CreateIfcType(this.modelID, IFCLABEL, value);
@@ -198,7 +345,7 @@ export class IfcEditor {
     const line = this.api.GetLine(this.modelID, ids[0]);
     line.Name = this.str(name);
     line.LongName = this.str(longName);
-    this.api.WriteLine(this.modelID, line);
+    this.writeLine(line);
   }
 
   // --- sites --------------------------------------------------------------
@@ -207,6 +354,36 @@ export class IfcEditor {
       const line = this.api.GetLine(this.modelID, id);
       return { expressID: id, name: val(line.Name), globalId: val(line.GlobalId) };
     });
+  }
+
+  /**
+   * Create a new IfcSite and aggregate it under the IfcProject. Used when a
+   * model carries an IfcProject but no IfcSite — the editor needs a site to
+   * attach land-registration / address property sets to (georeferencing is
+   * context-level, so the site stays geometry-free). Returns null if there is
+   * no IfcProject to aggregate under.
+   */
+  createSite(name = "Teren"): SiteInfo | null {
+    const projectIDs = this.idsOfType(IFCPROJECT);
+    if (!projectIDs.length) return null;
+
+    const guid = newIfcGuid();
+    const site = this.create(IFCSITE);
+    site.GlobalId = this.str(guid);
+    site.Name = this.str(name);
+    // IfcElementCompositionEnum (type 3 = enum). "ELEMENT" is mandatory in
+    // IFC2x3 and the conventional value for a leaf site in IFC4.
+    site.CompositionType = this.enumVal("ELEMENT");
+    this.writeLine(site);
+
+    // Tie the site into the spatial hierarchy: IfcProject --aggregates--> IfcSite.
+    const rel = this.create(IFCRELAGGREGATES);
+    rel.GlobalId = this.str(newIfcGuid());
+    rel.RelatingObject = this.ref(projectIDs[0]);
+    rel.RelatedObjects = [this.ref(site.expressID)];
+    this.writeLine(rel);
+
+    return { expressID: site.expressID, name, globalId: guid };
   }
 
   // --- property sets ------------------------------------------------------
@@ -246,14 +423,14 @@ export class IfcEditor {
         const p = this.api.GetLine(this.modelID, h.value);
         if (p && p.type === IFCPROPERTYSINGLEVALUE && val(p.Name) === prop) {
           p.NominalValue = this.label(value);
-          this.api.WriteLine(this.modelID, p);
+          this.writeLine(p);
           return;
         }
       }
       // Otherwise append a new property to the existing PSet.
       const psv = this.makePropertySingleValue(prop, value);
       pset.HasProperties = [...(pset.HasProperties ?? []), this.ref(psv.expressID)];
-      this.api.WriteLine(this.modelID, pset);
+      this.writeLine(pset);
       return;
     }
 
@@ -263,20 +440,20 @@ export class IfcEditor {
     pset.GlobalId = this.str(newIfcGuid());
     pset.Name = this.str(psetName);
     pset.HasProperties = [this.ref(psv.expressID)];
-    this.api.WriteLine(this.modelID, pset);
+    this.writeLine(pset);
 
     const rel = this.create(IFCRELDEFINESBYPROPERTIES);
     rel.GlobalId = this.str(newIfcGuid());
     rel.RelatedObjects = [this.ref(productID)];
     rel.RelatingPropertyDefinition = this.ref(pset.expressID);
-    this.api.WriteLine(this.modelID, rel);
+    this.writeLine(rel);
   }
 
   private makePropertySingleValue(prop: string, value: string): any {
     const psv = this.create(IFCPROPERTYSINGLEVALUE);
     psv.Name = this.str(prop);
     psv.NominalValue = this.label(value);
-    this.api.WriteLine(this.modelID, psv);
+    this.writeLine(psv);
     return psv;
   }
 
@@ -312,7 +489,7 @@ export class IfcEditor {
     const existing = this.findBeneficiarRel();
     if (existing) {
       existing.RelatingActor = this.ref(actor.expressID);
-      this.api.WriteLine(this.modelID, existing);
+      this.writeLine(existing);
       return;
     }
     const rel = this.create(IFCRELASSIGNSTOACTOR);
@@ -320,14 +497,14 @@ export class IfcEditor {
     rel.Name = this.str(BENEFICIAR_REL_NAME);
     rel.RelatedObjects = [this.ref(projectID)];
     rel.RelatingActor = this.ref(actor.expressID);
-    this.api.WriteLine(this.modelID, rel);
+    this.writeLine(rel);
   }
 
   private makeActor(name: string, isOrg: boolean): any {
     if (isOrg) {
       const org = this.create(IFCORGANIZATION);
       org.Name = this.str(name);
-      this.api.WriteLine(this.modelID, org);
+      this.writeLine(org);
       return org;
     }
     const parts = name.split(/\s+/).filter(Boolean);
@@ -336,7 +513,7 @@ export class IfcEditor {
     const person = this.create(IFCPERSON);
     if (given) person.GivenName = this.str(given);
     if (family) person.FamilyName = this.str(family);
-    this.api.WriteLine(this.modelID, person);
+    this.writeLine(person);
     return person;
   }
 
@@ -416,9 +593,9 @@ export class IfcEditor {
         const crs = this.api.GetLine(this.modelID, mc.TargetCRS.value);
         crs.Name = this.str(info.crsName || STEREO70.name);
         crs.Description = this.str(STEREO70.description);
-        this.api.WriteLine(this.modelID, crs);
+        this.writeLine(crs);
       }
-      this.api.WriteLine(this.modelID, mc);
+      this.writeLine(mc);
       return true;
     }
 
@@ -428,7 +605,7 @@ export class IfcEditor {
     crs.GeodeticDatum = this.str(STEREO70.geodeticDatum);
     crs.VerticalDatum = this.str(STEREO70.verticalDatum);
     crs.MapProjection = this.str(STEREO70.mapProjection);
-    this.api.WriteLine(this.modelID, crs);
+    this.writeLine(crs);
 
     mc = this.create(IFCMAPCONVERSION);
     mc.SourceCRS = this.ref(contextID);
@@ -439,7 +616,7 @@ export class IfcEditor {
     mc.XAxisAbscissa = this.num(IFCREAL, abscissa);
     mc.XAxisOrdinate = this.num(IFCREAL, ordinate);
     mc.Scale = this.num(IFCREAL, info.scale);
-    this.api.WriteLine(this.modelID, mc);
+    this.writeLine(mc);
     return true;
   }
 }

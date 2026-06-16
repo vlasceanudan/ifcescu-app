@@ -39,6 +39,12 @@ body,
   margin: 0;
   height: 100%;
 }
+/* Base type scale. Bumped above the 16px default so the viewer tree, property
+   panel and toolbar (all sized in rem) read at a comfortable size comparable to
+   other IFC viewers. Change this one value to rescale all rem-based text. */
+html {
+  font-size: 18px;
+}
 body {
   background: var(--bg);
   color: var(--text);
@@ -224,6 +230,34 @@ body {
   margin: 0 0 12px;
   font-size: 1.05rem;
   color: var(--text);
+}
+
+/* Collapsible card header (e.g. Georeferențiere) */
+.card-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+.card-toggle h3 {
+  margin: 0;
+}
+.card-caret {
+  color: var(--muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+.card-caret.open {
+  transform: rotate(180deg);
+}
+.card-body {
+  margin-top: 12px;
 }
 
 /* Form fields */
@@ -506,7 +540,7 @@ table.summary td.k {
   align-items: center;
   gap: 4px;
   border-radius: 6px;
-  padding: 2px 4px;
+  padding: 3px 4px;
   white-space: nowrap;
 }
 .trow:hover {
@@ -606,6 +640,55 @@ table.summary td.k {
   font-size: 0.88rem;
 }
 
+/* Selected-element title (sits above the property accordion, set apart) */
+.sel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border-bottom: 2px solid var(--border);
+}
+.sel-title {
+  flex: 1;
+  min-width: 0;
+}
+.sel-name {
+  font-weight: 700;
+  font-size: 0.98rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sel-type {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 1px;
+}
+.sel-actions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.sel-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+}
+.sel-btn:hover {
+  color: var(--bs-magenta);
+  border-color: var(--bs-magenta);
+}
+
 /* Property accordion */
 .pacc {
   border-bottom: 1px solid var(--border);
@@ -664,6 +747,117 @@ table.summary td.k {
   color: var(--muted);
   width: 42%;
 }
+.pacc-table td.pacc-starcell {
+  width: 18px;
+  padding-right: 0;
+}
+/* Per-row favorite toggle */
+.pacc-star {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  font-size: 0.95rem;
+  color: var(--muted);
+  opacity: 0.55;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+.pacc-star:hover {
+  opacity: 1;
+}
+.pacc-star.on {
+  color: #f5b301;
+  opacity: 1;
+}
+/* Pinned favourites section header (always open, not clickable) */
+.pacc-fav {
+  background: var(--surface-2);
+}
+.pacc-head-static {
+  cursor: default;
+}
+.pacc-head-static .pacc-caret {
+  color: #f5b301;
+}
+/* File / model info panel (shown when nothing is selected) */
+.finfo {
+  padding: 2px 0;
+}
+.finfo-sec {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.finfo-sec:last-child {
+  border-bottom: none;
+}
+.finfo-sec h4 {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.finfo-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 0.88rem;
+}
+.finfo-k {
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+.finfo-v {
+  text-align: right;
+  word-break: break-word;
+  font-weight: 500;
+}
+.finfo-map {
+  width: 100%;
+  height: 190px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 10px 0 2px;
+  overflow: hidden; /* crops the OSM embed's bottom attribution/footer bar */
+}
+.finfo-map-frame {
+  width: 100%;
+  /* Taller than the container so the embed's footer bar is clipped off-view. */
+  height: 226px;
+  border: 0;
+  display: block;
+}
+.finfo-attrib {
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-align: right;
+  margin: 0 0 8px;
+}
+.finfo-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.finfo-links a {
+  flex: 1 1 auto;
+  text-align: center;
+  white-space: nowrap;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--bs-teal);
+  text-decoration: none;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.finfo-links a:hover {
+  border-color: var(--bs-teal);
+  background: var(--surface-2);
+}
 .viewer-status {
   position: absolute;
   bottom: 10px;
@@ -673,7 +867,7 @@ table.summary td.k {
   color: #fff;
   padding: 5px 10px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 0.8rem;
 }
 
 /* Globe (Cesium) view */

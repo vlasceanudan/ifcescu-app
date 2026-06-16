@@ -284,8 +284,8 @@ function Readout({
       </div>
       <table>
         <tbody>
-          <tr><td>Est (Y)</td><td>{f(info.anchorStereo70.e)} m</td></tr>
-          <tr><td>Nord (X)</td><td>{f(info.anchorStereo70.n)} m</td></tr>
+          <tr><td>Est (X)</td><td>{f(info.anchorStereo70.e)} m</td></tr>
+          <tr><td>Nord (Y)</td><td>{f(info.anchorStereo70.n)} m</td></tr>
           <tr><td>Cotă model (Marea Neagră 1975)</td><td>{f(info.anchorStereo70.h)} m</td></tr>
           {info.terrainHeight != null && (
             <tr><td>Cotă teren (la ancoră)</td><td>{f(info.terrainHeight)} m</td></tr>

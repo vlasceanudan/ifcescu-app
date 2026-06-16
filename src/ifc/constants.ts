@@ -25,7 +25,7 @@ export const STEREO70 = {
 };
 
 // Rough Stereo 70 extents over Romania (metres) for soft validation only.
-// X = Nord (Northings), Y = Est (Eastings).
+// Y = Nord (Northings), X = Est (Eastings).
 export const STEREO70_BOUNDS = { eMin: 100000, eMax: 900000, nMin: 200000, nMax: 800000 };
 
 // PSet_Address property keys (buildingSMART standard).

@@ -45,6 +45,13 @@ export class MeasureTool {
   /** When set, the Point tool also reports projected (Stereo 70) coordinates. */
   private georef: GeorefInfo | null = null;
 
+  /**
+   * Scene-space translation applied to the model at load to keep it near the
+   * origin (anti-jitter). Added back to picked points so reported coordinates
+   * are in the original IFC frame. Zero when the model wasn't recentred.
+   */
+  private modelOffset = new THREE.Vector3();
+
   private group = new THREE.Group();
   private raycaster = new THREE.Raycaster();
   private labelLayer: HTMLDivElement;
@@ -100,6 +107,11 @@ export class MeasureTool {
 
   setGeoref(georef: GeorefInfo | null) {
     this.georef = georef;
+  }
+
+  /** Tell the tool how far the model geometry was shifted from its IFC origin. */
+  setModelOffset(offset: THREE.Vector3) {
+    this.modelOffset.copy(offset);
   }
 
   clearAll() {
@@ -327,12 +339,16 @@ export class MeasureTool {
   }
 
   private fmtPoint(p: THREE.Vector3): string {
-    // web-ifc-viewer renders IFC (Z-up) geometry as three.js (Y-up): the scene
-    // vector is (ifcX, ifcZ, -ifcY). Convert back to IFC model coordinates so X
-    // is East, Y is North and Z is the height.
-    const ifcX = p.x;
-    const ifcY = -p.z;
-    const ifcZ = p.y;
+    // Undo the anti-jitter recenter so we read the original scene position, then
+    // convert back to IFC coordinates. web-ifc-viewer renders IFC (Z-up) geometry
+    // as three.js (Y-up): the scene vector is (ifcX, ifcZ, -ifcY), so X is East,
+    // Y is North and Z is the height.
+    const sx = p.x + this.modelOffset.x;
+    const sy = p.y + this.modelOffset.y;
+    const sz = p.z + this.modelOffset.z;
+    const ifcX = sx;
+    const ifcY = -sz;
+    const ifcZ = sy;
     const local = `X ${ifcX.toFixed(2)}  Y ${ifcY.toFixed(2)}  Z ${ifcZ.toFixed(2)}`;
     const g = this.georef;
     if (!g) return local;
@@ -378,8 +394,8 @@ export class MeasureTool {
       color: "#222",
       border: "1px solid #00a0af",
       borderRadius: "4px",
-      padding: "1px 6px",
-      font: "600 11px system-ui, sans-serif",
+      padding: "2px 7px",
+      font: "600 13px system-ui, sans-serif",
       whiteSpace: "pre",
       textAlign: "center",
     } as CSSStyleDeclaration);
@@ -451,7 +467,7 @@ function snapGlyph(type: SnapType): string {
     type === "free"
       ? ""
       : `<div style="position:absolute;left:14px;top:-2px;background:rgba(0,0,0,.72);color:#fff;
-           font:600 10px system-ui;padding:1px 5px;border-radius:3px;white-space:nowrap">${SNAP_LABEL[type]}</div>`;
+           font:600 12px system-ui;padding:1px 6px;border-radius:3px;white-space:nowrap">${SNAP_LABEL[type]}</div>`;
   return `<svg width="18" height="18" viewBox="0 0 18 18" style="display:block">${shapes[type]}</svg>${label}`;
 }
 

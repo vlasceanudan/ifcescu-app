@@ -1,8 +1,8 @@
 // Coordinate reference transforms for the Cesium globe view.
 //
 // Romanian national CRS is Stereo 70 (EPSG:3844, Pulkovo 1942(58) / Stereo70).
-// proj4 outputs/accepts [easting, northing]; in Romanian terms easting = Est (Y)
-// and northing = Nord (X) — matching GeorefInfo.eastings / GeorefInfo.northings.
+// proj4 outputs/accepts [easting, northing]; in Romanian terms easting = Est (X)
+// and northing = Nord (Y) — matching GeorefInfo.eastings / GeorefInfo.northings.
 import proj4 from "proj4";
 
 // EPSG:3844 with a 7-parameter Helmert to WGS84 (sub-2 m, fine for visual

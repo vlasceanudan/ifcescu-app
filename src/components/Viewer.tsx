@@ -1,5 +1,6 @@
 import { type ReactNode, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { IfcViewerAPI } from "web-ifc-viewer";
+import { IFCPROJECT, IFCBUILDINGSTOREY } from "web-ifc";
 import { Color, Box3, Sphere, Vector3, Group, Raycaster, Vector2, EdgesGeometry } from "three";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry";
@@ -7,15 +8,20 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial";
 import type { Theme } from "../hooks/useTheme";
 import type { GeorefInfo } from "../ifc/editor";
 import { resolveModelSchema } from "../ifc/api";
+import { stereo70ToWgs84 } from "../geo/crs";
+import { STEREO70, STEREO70_BOUNDS } from "../ifc/constants";
 import { MeasureTool, type MeasureMode } from "../viewer/measure";
 import { IfcTree, type TreeNode } from "./IfcTree";
-import { PropAccordion, type PropGroup } from "./PropsPanel";
+import { PropAccordion, FileInfoPanel, type PropGroup, type FileInfo } from "./PropsPanel";
 
 interface Props {
   bytes: Uint8Array;
   fileName: string;
   theme: Theme;
   georef: GeorefInfo | null;
+  /** Favorited property names + toggle, owned by App so they reset on new file. */
+  favorites: Set<string>;
+  onToggleFavorite: (key: string) => void;
 }
 
 const VIEWER_BG: Record<Theme, string> = { light: "#eef0f4", dark: "#15161a" };
@@ -53,7 +59,7 @@ function Dropdown({ label, icon, active, children }: { label: string; icon: stri
   );
 }
 
-export function Viewer({ bytes, fileName, theme, georef }: Props) {
+export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavorite }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<any>(null);
   const measureRef = useRef<MeasureTool | null>(null);
@@ -62,6 +68,9 @@ export function Viewer({ bytes, fileName, theme, georef }: Props) {
   const stateRef = useRef<{ modelID: number; allIDs: number[] }>({ modelID: -1, allIDs: [] });
   const visibleRef = useRef<Set<number>>(new Set());
   const selectedRef = useRef<Set<number>>(new Set());
+  // Elements hidden by the last H press, so a second H restores them (until a
+  // new element is selected).
+  const lastHiddenRef = useRef<number[]>([]);
   const sectionRef = useRef(false);
   const ray = useRef(new Raycaster());
 
@@ -70,6 +79,11 @@ export function Viewer({ bytes, fileName, theme, georef }: Props) {
   const [section, setSection] = useState(false);
   const [propGroups, setPropGroups] = useState<PropGroup[] | null>(null);
   const [propsKey, setPropsKey] = useState(0);
+  const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
+  // Name + IFC class of the currently selected element (shown as the panel title).
+  const [selHeader, setSelHeader] = useState<{ name: string; type: string } | null>(null);
+  // Favorites (favorites / onToggleFavorite) are owned by App so they reset when
+  // a new IFC is imported and survive Edit↔View tab switches of the same file.
   const [propsWidth, setPropsWidth] = useState(340);
   const [treeWidth, setTreeWidth] = useState(300);
   const [tree, setTree] = useState<TreeNode | null>(null);
@@ -128,6 +142,21 @@ export function Viewer({ bytes, fileName, theme, georef }: Props) {
         stateRef.current = { modelID: model.modelID, allIDs };
         visibleRef.current = new Set(allIDs);
         setVisibleIds(new Set(allIDs));
+
+        // Georeferenced models carry Stereo 70 coordinates (~10^5–10^6 m). That
+        // far from the origin, float32 precision in the shaders is only ~dm, so
+        // the model visibly jitters while orbiting. Recenter the geometry on its
+        // bounding-box centre so it renders near the origin — every subset shares
+        // this position buffer, so they all shift with it. The offset is handed
+        // to the measure tool so reported model / Stereo 70 coordinates stay exact.
+        const modelOffset = new Vector3();
+        model.geometry.computeBoundingBox();
+        model.geometry.boundingBox?.getCenter(modelOffset);
+        if (modelOffset.lengthSq() > 1) {
+          model.geometry.translate(-modelOffset.x, -modelOffset.y, -modelOffset.z);
+          model.geometry.computeBoundingSphere();
+        }
+
         installDisplaySubset(viewer, model, allIDs);
 
         const sel = new Group();
@@ -136,6 +165,17 @@ export function Viewer({ bytes, fileName, theme, georef }: Props) {
 
         measureRef.current = new MeasureTool(viewer, host);
         measureRef.current.setGeoref(georefRef.current);
+        measureRef.current.setModelOffset(modelOffset);
+
+        // loadIfc framed the camera on the pre-recenter position; refit to the
+        // recentred model so it is back in view.
+        try {
+          const b = modelBounds();
+          if (b) b.cc.fitToSphere(b.sphere, false);
+        } catch {
+          /* ignore */
+        }
+
         setStatus("Model încărcat • orbit: stânga • pan: dreapta • zoom: scroll • Esc: anulează");
         wireEvents(host, viewer);
 
@@ -143,9 +183,20 @@ export function Viewer({ bytes, fileName, theme, georef }: Props) {
         try {
           const struct = await viewer.IFC.getSpatialStructure(model.modelID, true);
           const allSet = new Set(allIDs);
-          setTree(toTreeNode(struct, allSet));
+          const api = viewer.IFC.loader.ifcManager.ifcAPI;
+          setTree(toTreeNode(struct, allSet, api, model.modelID));
         } catch {
           /* tree optional */
+        }
+
+        // General model/file overview shown when nothing is selected.
+        try {
+          const api = viewer.IFC.loader.ifcManager.ifcAPI;
+          setFileInfo(
+            gatherFileInfo(api, model.modelID, allIDs.length, modelOffset, bytes.length, fileName, georefRef.current),
+          );
+        } catch {
+          /* info panel optional */
         }
       } catch (e: any) {
         if (!disposed) setStatus("Eroare la încărcarea modelului: " + (e?.message ?? e));
@@ -186,9 +237,13 @@ export function Viewer({ bytes, fileName, theme, georef }: Props) {
     measureRef.current?.setGeoref(georef);
   }, [georef]);
 
-  // Keyboard shortcuts: Esc cancels the active command; H hides the selection.
+  // Keyboard shortcuts: Esc cancels the active command; H toggles hiding the
+  // selection (press again to restore); Z zooms to the selection.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === "Escape") {
         measureRef.current?.setMode("none");
         setMeasureMode("none");
@@ -199,11 +254,13 @@ export function Viewer({ bytes, fileName, theme, georef }: Props) {
         setStatus("Comandă anulată (Esc).");
         return;
       }
-      if ((e.key === "h" || e.key === "H") && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (selectedRef.current.size) {
-          hideIds([...selectedRef.current]);
-          setStatus("Element(e) ascuns(e) (H). Folosiți Vizibilitate → Afișează tot.");
-        }
+      if (e.key === "h" || e.key === "H") {
+        toggleHideSelection();
+        return;
+      }
+      if (e.key === "z" || e.key === "Z") {
+        if (selectedRef.current.size) zoomToSelection();
+        return;
       }
     };
     window.addEventListener("keydown", onKey);
@@ -279,6 +336,7 @@ export function Viewer({ bytes, fileName, theme, georef }: Props) {
     const viewer = viewerRef.current;
     const sel = selGroupRef.current;
     if (!viewer || !sel) return;
+    if (ids.length) lastHiddenRef.current = []; // new pick resets the H hide/show toggle
     clearOutline(sel);
     if (ids.length) {
       const manager = viewer.IFC.loader.ifcManager;
@@ -301,7 +359,10 @@ export function Viewer({ bytes, fileName, theme, georef }: Props) {
     setSelectedIds(new Set(ids));
     const propId = expressID ?? (ids.length === 1 ? ids[0] : undefined);
     if (propId != null) showProperties(viewer, stateRef.current.modelID, propId);
-    else setPropGroups(null);
+    else {
+      setPropGroups(null);
+      setSelHeader(null);
+    }
   };
 
   const clearSelection = () => {
@@ -309,6 +370,64 @@ export function Viewer({ bytes, fileName, theme, georef }: Props) {
     selectedRef.current = new Set();
     setSelectedIds(new Set());
     setPropGroups(null);
+    setSelHeader(null);
+  };
+
+  /** Fit the camera to the currently selected element(s). */
+  const zoomToSelection = () => {
+    const viewer = viewerRef.current;
+    const cc = viewer?.context?.ifcCamera?.cameraControls;
+    const ids = [...selectedRef.current];
+    if (!viewer || !cc || !ids.length) return;
+    try {
+      const manager = viewer.IFC.loader.ifcManager;
+      const scene = viewer.context.getScene();
+      const sub = manager.createSubset({
+        modelID: stateRef.current.modelID, ids, applyBVH: false, scene, removePrevious: true, customID: "__selzoom",
+      });
+      if (!sub) return;
+      sub.updateMatrixWorld(true);
+      // Subsets share the model's full position buffer and pick triangles via an
+      // index, so geometry.boundingBox (and Box3.setFromObject) would cover the
+      // WHOLE model. Build the box from just the indexed vertices instead.
+      const box = new Box3();
+      const pos = sub.geometry.attributes.position;
+      const index = sub.geometry.index;
+      if (index && pos) {
+        const p = new Vector3();
+        for (let i = 0; i < index.count; i++) {
+          box.expandByPoint(p.fromBufferAttribute(pos, index.getX(i)));
+        }
+        box.applyMatrix4(sub.matrixWorld);
+      } else if (pos) {
+        box.setFromBufferAttribute(pos).applyMatrix4(sub.matrixWorld);
+      }
+      sub.removeFromParent();
+      if (box.isEmpty()) return;
+      cc.fitToSphere(box.getBoundingSphere(new Sphere()), true);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  /** Hide the currently selected element(s); remembers them so H can restore. */
+  const hideSelection = () => {
+    const ids = [...selectedRef.current];
+    if (!ids.length) return;
+    lastHiddenRef.current = ids;
+    hideIds(ids);
+  };
+
+  /** Toggle (H): hide the selection, or restore the last H-hidden elements. */
+  const toggleHideSelection = () => {
+    if (selectedRef.current.size) {
+      hideSelection();
+      setStatus("Element(e) ascuns(e) (H). Apăsați H din nou pentru a le reafișa.");
+    } else if (lastHiddenRef.current.length) {
+      showIds(lastHiddenRef.current);
+      lastHiddenRef.current = [];
+      setStatus("Element(e) reafișat(e) (H).");
+    }
   };
 
   async function showProperties(viewer: any, modelID: number, id: number) {
@@ -319,23 +438,40 @@ export function Viewer({ bytes, fileName, theme, georef }: Props) {
       const qval = (it: any) =>
         it.NominalValue ?? it.LengthValue ?? it.AreaValue ?? it.VolumeValue ?? it.CountValue ?? it.WeightValue ?? it.Value;
 
+      // Element title (name + IFC class) shown above the property groups. The
+      // type comes from the line's type code (getProperties().type is unreliable).
+      let typeStr = "";
+      try {
+        const api = viewer.IFC.loader.ifcManager.ifcAPI;
+        typeStr = api.GetNameFromTypeCode(api.GetLineType(modelID, id)) ?? "";
+      } catch {
+        /* ignore */
+      }
+      setSelHeader({ name: v(p.Name), type: prettyIfcType(typeStr) });
+
       const groups: PropGroup[] = [];
-      // Attributes group.
+      // Attributes group (the IFC class lives in the title, so it's omitted here).
       const attrs = [
-        { k: "Tip IFC", v: typeof p.type === "string" ? p.type : "" },
         { k: "Nume", v: v(p.Name) },
         { k: "GlobalId", v: v(p.GlobalId) },
         { k: "Descriere", v: v(p.Description) },
       ].filter((r) => r.v.length);
       if (attrs.length) groups.push({ name: "Atribute", rows: attrs });
 
-      // One group per property/quantity set.
+      // One group per property/quantity set. Quantity sets (IfcElementQuantity /
+      // Qto_*) are collected separately so they always render last — after the
+      // IFC attributes and any custom property sets.
+      const qtoGroups: PropGroup[] = [];
       for (const set of p.psets ?? []) {
+        const isQuantity = set.Quantities != null || /^qto[_.]/i.test(v(set.Name));
         const rows = (set.HasProperties ?? set.Quantities ?? [])
           .map((it: any) => ({ k: v(it.Name), v: v(qval(it)) }))
           .filter((r: PropGroup["rows"][number]) => r.k.length);
-        if (rows.length) groups.push({ name: v(set.Name) || "PropertySet", rows });
+        if (!rows.length) continue;
+        const group = { name: v(set.Name) || "PropertySet", rows };
+        (isQuantity ? qtoGroups : groups).push(group);
       }
+      groups.push(...qtoGroups);
 
       setPropGroups(groups);
       setPropsKey((k) => k + 1);
@@ -588,7 +724,7 @@ export function Viewer({ bytes, fileName, theme, georef }: Props) {
       <aside className="props-panel" style={{ width: propsWidth }}>
         <div className="props-resize" onMouseDown={startPropsResize} title="Trageți pentru redimensionare" />
         <div className="props-head">
-          <span>Proprietăți element</span>
+          <span>{propGroups ? "Proprietăți element" : "Informații model"}</span>
           {propGroups && (
             <span className="props-close" onClick={clearSelection} title="Deselectează">
               ×
@@ -597,7 +733,41 @@ export function Viewer({ bytes, fileName, theme, georef }: Props) {
         </div>
         <div className="props-body">
           {propGroups ? (
-            <PropAccordion key={propsKey} groups={propGroups} />
+            <>
+              {selHeader && (
+                <div className="sel-header">
+                  <div className="sel-title">
+                    <div className="sel-name" title={selHeader.name}>
+                      {selHeader.name || "(fără nume)"}
+                    </div>
+                    {selHeader.type && <div className="sel-type">{selHeader.type}</div>}
+                  </div>
+                  <div className="sel-actions">
+                    <button className="sel-btn" title="Încadrează pe element" onClick={zoomToSelection}>
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                        <circle cx="12" cy="12" r="4" />
+                        <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+                      </svg>
+                    </button>
+                    <button className="sel-btn" title="Ascunde elementul" onClick={hideSelection}>
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z" />
+                        <circle cx="12" cy="12" r="2.6" />
+                        <path d="M3 3l18 18" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              )}
+              <PropAccordion
+                key={propsKey}
+                groups={propGroups}
+                favorites={favorites}
+                onToggleFavorite={onToggleFavorite}
+              />
+            </>
+          ) : fileInfo ? (
+            <FileInfoPanel info={fileInfo} />
           ) : (
             <div className="props-empty">
               Selectați un element în viewer sau în arbore pentru a-i vedea proprietățile.
@@ -659,17 +829,119 @@ function groupByClass(node: TreeNode, ctr: { n: number }): TreeNode {
   return { ...node, children: [...containers, ...groups], defaultOpen: true };
 }
 
-function toTreeNode(node: any, allSet: Set<number>): TreeNode {
-  const children = (node.children ?? []).map((c: any) => toTreeNode(c, allSet));
+/**
+ * Resolve an entity's IFC type name. web-ifc-viewer's getSpatialStructure returns
+ * "<web-ifc-type-unknown>" for IFC4X3 entities (IfcSite, IfcBuiltElement, …), but
+ * GetLineType + GetNameFromTypeCode resolves them correctly, so re-derive it here.
+ */
+function resolveTypeName(api: any, modelID: number, expressID: number, fallback: string): string {
+  try {
+    const name = api.GetNameFromTypeCode(api.GetLineType(modelID, expressID));
+    if (name && !name.startsWith("<")) return name;
+  } catch {
+    /* ignore */
+  }
+  return fallback;
+}
+
+function toTreeNode(node: any, allSet: Set<number>, api: any, modelID: number): TreeNode {
+  const children = (node.children ?? []).map((c: any) => toTreeNode(c, allSet, api, modelID));
   const ids: number[] = [];
   if (allSet.has(node.expressID)) ids.push(node.expressID);
   for (const c of children) ids.push(...c.ids);
   return {
     expressID: node.expressID,
-    type: node.type,
+    type: resolveTypeName(api, modelID, node.expressID, node.type),
     name: node.Name?.value ?? node.LongName?.value ?? "",
     ids,
     children,
+  };
+}
+
+/** "IFCCOLUMN" → "IfcColumn" for the element title (single-word types are exact). */
+function prettyIfcType(t: string): string {
+  if (!t) return "";
+  if (/^IFC/i.test(t)) {
+    const rest = t.slice(3);
+    return "Ifc" + rest.charAt(0).toUpperCase() + rest.slice(1).toLowerCase();
+  }
+  return t;
+}
+
+/**
+ * Build the general model overview. The location pin is the model centroid (in
+ * IFC coordinates, recovered from the scene-space recenter offset) run through
+ * the IfcMapConversion if present, then projected to WGS84 — but only when it
+ * falls inside Romania's Stereo 70 extents, so non-georeferenced models don't
+ * show a bogus pin.
+ */
+function gatherFileInfo(
+  api: any,
+  modelID: number,
+  elementsWithGeometry: number,
+  centroidScene: Vector3,
+  byteLength: number,
+  fileName: string,
+  georef: GeorefInfo | null,
+): FileInfo {
+  const sval = (x: any) => (x && x.value != null ? String(x.value) : "");
+  const count = (t: number) => {
+    try {
+      return api.GetLineIDsWithType(modelID, t).size();
+    } catch {
+      return 0;
+    }
+  };
+
+  let totalEntities = 0;
+  try {
+    totalEntities = api.GetAllLines(modelID).size();
+  } catch {
+    /* ignore */
+  }
+
+  let projectName = "";
+  let projectGlobalId = "";
+  try {
+    const pids = api.GetLineIDsWithType(modelID, IFCPROJECT);
+    if (pids.size()) {
+      const pr = api.GetLine(modelID, pids.get(0));
+      projectName = sval(pr.Name) || sval(pr.LongName);
+      projectGlobalId = sval(pr.GlobalId);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // Scene is Y-up: scene (ifcX, ifcZ, -ifcY). Recover the model-frame centroid.
+  const ifcX = centroidScene.x;
+  const ifcY = -centroidScene.z;
+  let E = ifcX;
+  let N = ifcY;
+  if (georef) {
+    const t = (georef.rotationDeg * Math.PI) / 180;
+    const ca = Math.cos(t);
+    const sa = Math.sin(t);
+    E = georef.eastings + georef.scale * (ifcX * ca - ifcY * sa);
+    N = georef.northings + georef.scale * (ifcX * sa + ifcY * ca);
+  }
+  const b = STEREO70_BOUNDS;
+  let location: FileInfo["location"] = null;
+  if (E >= b.eMin && E <= b.eMax && N >= b.nMin && N <= b.nMax) {
+    const { lonDeg, latDeg } = stereo70ToWgs84(E, N);
+    location = { lat: latDeg, lon: lonDeg, crs: georef?.crsName || STEREO70.name };
+  }
+
+  return {
+    fileName,
+    fileSizeKB: byteLength / 1024,
+    schema: api.GetModelSchema(modelID) || "—",
+    projectName,
+    projectGlobalId,
+    totalEntities,
+    buildingStoreys: count(IFCBUILDINGSTOREY),
+    elementsWithGeometry,
+    location,
   };
 }
 

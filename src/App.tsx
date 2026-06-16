@@ -25,19 +25,30 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<"edit" | "view" | "globe">("edit");
+  // Favorited property names for the 3D viewer's property panel. Owned here so a
+  // new import resets them (they belong to the currently loaded model).
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const toggleFavorite = (key: string) =>
+    setFavorites((s) => {
+      const x = new Set(s);
+      x.has(key) ? x.delete(key) : x.add(key);
+      return x;
+    });
 
   const onFile = async (file: File) => {
     setError(null);
     setBusy(true);
     setLoaded(null);
+    setFavorites(new Set()); // reset favorites for the new model
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const api = await getIfcApi();
       const editor = IfcEditor.open(api, bytes);
       const project = editor.getProject();
       if (!project) throw new Error("Nu există niciun IfcProject în model.");
+      // A missing IfcSite no longer blocks loading — the user can add one from
+      // the editor (the "Teren" card offers an "Adaugă IfcSite" button).
       const sites = editor.getSites();
-      if (!sites.length) throw new Error("Nu s-a găsit niciun IfcSite în model.");
       setLoaded({
         editor,
         project,
@@ -53,6 +64,13 @@ export default function App() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const addSite = () => {
+    if (!loaded) return;
+    const site = loaded.editor.createSite();
+    if (!site) return;
+    setLoaded({ ...loaded, sites: [...loaded.sites, site] });
   };
 
   const themeBtn = (
@@ -113,6 +131,7 @@ export default function App() {
                 sites={loaded.sites}
                 beneficiar={loaded.beneficiar}
                 fileName={loaded.fileName}
+                onAddSite={addSite}
                 onGeorefChange={(georef) => setLoaded((prev) => (prev ? { ...prev, georef } : prev))}
               />
             </div>
@@ -120,7 +139,14 @@ export default function App() {
         )}
 
         {loaded && tab === "view" && (
-          <Viewer bytes={loaded.bytes} fileName={loaded.fileName} theme={theme} georef={loaded.georef} />
+          <Viewer
+            bytes={loaded.bytes}
+            fileName={loaded.fileName}
+            theme={theme}
+            georef={loaded.georef}
+            favorites={favorites}
+            onToggleFavorite={toggleFavorite}
+          />
         )}
 
         {loaded && tab === "globe" && (

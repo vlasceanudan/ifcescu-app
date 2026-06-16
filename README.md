@@ -22,24 +22,47 @@ centre, resizable properties panel on the right.
   never duplicated), **`PSet_LandRegistration`** (LandTitleID, LandId) and
   **`PSet_Address`** (Street, Town, Region/county, PostalCode, Country) on the chosen
   `IfcSite`.
-- **Georeferențiere (Stereo 70)**: read/edit the **`IfcMapConversion`** +
-  **`IfcProjectedCRS`** origin — Est (Y) / Nord (X) / Cotă / rotation / scale (IFC4+
-  only; disabled with a note on IFC2x3). Full-precision easting/northing is preserved
-  on export (web-ifc 0.0.39 otherwise truncates reals to ~6 significant figures).
+- **Add an `IfcSite`** when the model has none: instead of refusing the file, the
+  *Teren* card offers an **Adaugă IfcSite** button (creates the site and aggregates it
+  under the `IfcProject`), so land/address data always has somewhere to attach.
+- **Georeferențiere (Stereo 70)** — a **collapsible** section (closed by default):
+  read/edit the **`IfcMapConversion`** + **`IfcProjectedCRS`** origin —
+  Est (X) / Nord (Y) / Cotă / rotation / scale (IFC4+ only; disabled with a note on
+  IFC2x3). Full-precision easting/northing is preserved on export.
 - Fields **pre-fill** from the model; light validation (postal code, land fields,
   Stereo 70 bounds).
 - Apply → summary of changes → **download the enriched `.ifc`**.
+- **Non-destructive export**: only the lines actually created/modified are
+  re-serialised; every original line (geometry, placements, owner-history) is kept
+  **byte-for-byte**, so the download stays geometrically identical to the source and
+  opens cleanly in other viewers (see [Notes](#notes)).
 
 ### 🧊 Vizualizare 3D (viewer)
 - **IFC structure tree** (left, resizable): browse the spatial hierarchy with leaf
   elements **grouped by IFC class** (e.g. `PILE (336)`), so a storey with hundreds of
   identical elements reads as a short class list. Toggle element **visibility** (eye)
-  and **select** straight from the tree.
+  and **select** straight from the tree. Type names resolve correctly for **IFC4X3**
+  too (web-ifc-viewer's spatial walker reports them as `<unknown>`).
 - **Selection**: click an element (in the viewer or tree) → a clean **outline**
-  highlight (no hover highlight); **`H`** hides the selection, **`Esc`** cancels the
-  active command.
-- **Properties** (right, resizable): grouped into collapsible accordions — an
-  *Atribute* section plus one per property/quantity set.
+  highlight (no hover highlight).
+- **Properties** (right, resizable):
+  - When an element is selected, a **title** shows its **name + IFC class** with two
+    actions — **zoom-to** (fit the camera tightly to the element) and **hide**.
+  - Property sets are grouped into collapsible accordions — an *Atribute* section,
+    custom psets, then **quantity sets (`Qto_*`) always last**.
+  - **Favorite a property** with the ☆ star to pin it in a *Favorite* section that
+    stays visible as you move between elements; favorites reset when a new file is
+    imported.
+  - With **nothing selected**, the panel shows a **model overview** (file size, schema,
+    project name/GlobalId, statistics) and a **Location** card — Stereo 70 → WGS84
+    coordinates on an embedded **OpenStreetMap** map with a pin, plus quick links to
+    **Google Maps / OpenStreetMap / Google Earth**.
+- **Keyboard shortcuts**: **`Z`** zoom-to selection, **`H`** toggle hide/restore the
+  selection (press again before picking another element to bring it back), **`Esc`**
+  cancels the active command.
+- Large georeferenced models are **recentred at load** so they render near the origin —
+  avoids the float32 jitter you get when geometry sits at Stereo 70 coordinates
+  (~10⁵–10⁶ m); reported measurement coordinates remain exact.
 - **Măsurare**: length, point and area, with AutoCAD-style **snapping** (endpoint /
   midpoint / section-intersection / on-edge). The **point** tool reports IFC X/Y/Z and,
   when the model is georeferenced, Stereo 70 **E/N/H**.
@@ -109,7 +132,8 @@ src/
   theme/theme.css       buildingSMART palette + light/dark
   hooks/useTheme.ts
 tests/
-  editor.test.ts        editor + georef round-trip
+  editor.test.ts        editor + georef round-trip (needs a sample IFC)
+  createSite.test.ts    add-IfcSite + non-destructive export round-trip
   geo.test.ts           crs / geoid / placement unit tests
 ```
 
@@ -121,12 +145,23 @@ tests/
 - **IFC4X3**: web-ifc 0.0.39 doesn't map the `IFC4X3` file-schema header to its
   internal `IFC4_3` table, so `GetLine` throws and the file appears unreadable.
   `src/ifc/api.ts` (`resolveModelSchema`) detects this and points the model at the
-  right table — applied in both the editor and the viewer.
+  right table — applied in both the editor and the viewer. The viewer's spatial tree
+  additionally re-derives each node's type via `GetLineType` + `GetNameFromTypeCode`,
+  because web-ifc-viewer's `getSpatialStructure` returns `<web-ifc-type-unknown>` for
+  IFC4X3 entities.
+- **Export is non-destructive on purpose.** web-ifc 0.0.39's serializer rewrites large
+  numbers with only ~6 significant figures *and* an invalid trailing dot
+  (e.g. `1716464774` → `1.71646E+09.`), which distorts placement geometry and makes
+  other viewers reject the file. So `IfcEditor.export()` does **not** re-serialise the
+  whole model: it keeps every original `#id=…;` record verbatim and splices in only the
+  records it created/modified (full georef precision re-injected into
+  `IfcMapConversion`). This also sidesteps web-ifc's `SaveModel` buffer-overflow
+  (`offset is out of bounds`) on large models.
 - `web-ifc.wasm` is copied to the site root at build time and loaded via
   `import.meta.env.BASE_URL`, so it resolves at any GitHub Pages sub-path.
 - The Cesium globe is **token-free** (no Cesium ion access token). Horizontal
   Stereo 70 → WGS84 uses a 7-parameter Helmert (≈ sub-2 m) — fine for context, not a
   cadastral-grade grid transform.
-- The model is parsed client-side, so very large IFC files take longer to open, and
-  web-ifc 0.0.39 can fail to **export** very large models (the edits still apply
-  in-memory; the download is surfaced as an error).
+- The model is parsed client-side, so very large IFC files take longer to open.
+- The Location map embeds OpenStreetMap and the map/Earth links open external sites, so
+  that card needs network access (it simply stays empty offline).
