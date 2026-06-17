@@ -15,7 +15,7 @@ export interface TreeNode {
 // IFC_ENTITY_NAMES map (IFC4X3 schema) is the only source that recovers word
 // boundaries for multi-word classes (IFCWALLSTANDARDCASE → IfcWallStandardCase).
 // No Romanian translations — classes are shown exactly as their IFC type.
-function friendly(type: string): string {
+export function friendly(type: string): string {
   if (!type) return "";
   const hit = IFC_ENTITY_NAMES[type.toUpperCase()];
   if (hit) return hit;

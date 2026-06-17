@@ -106,14 +106,7 @@ export default function App() {
 
         <div className="spacer" />
 
-        {loaded && (
-          <>
-            <span className="filechip" title={loaded.fileName}>
-              {loaded.fileName}
-            </span>
-            <UploadPanel onFile={onFile} variant="button" />
-          </>
-        )}
+        {loaded && <UploadPanel onFile={onFile} variant="button" />}
         {themeBtn}
       </header>
 

@@ -10,6 +10,8 @@ import { IfcTree, type TreeNode } from "./IfcTree";
 import { PropAccordion, FileInfoPanel, type PropGroup, type FileInfo } from "./PropsPanel";
 import { BcfPanel } from "./BcfPanel";
 import { IdsPanel } from "./IdsPanel";
+import { DataTablePanel } from "./DataTablePanel";
+import type { PivotConfig } from "../viewer/pivot";
 import type { IDSValidationReport } from "../ifc/ids";
 import { createBCFFromIDSReport, addTopicToProject, type BCFProject } from "../ifc/bcf";
 
@@ -86,7 +88,9 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
   const lastHiddenRef = useRef<number[]>([]);
   const sectionRef = useRef(false);
 
-  const [status, setStatus] = useState("Se inițializează vizualizatorul…");
+  // Status is tracked (drives nothing visible now — the overlay was removed) but
+  // kept so the existing setStatus call sites stay valid.
+  const [, setStatus] = useState("Se inițializează vizualizatorul…");
   const [measureMode, setMeasureMode] = useState<MeasureMode>("none");
   const [snapOpts, setSnapOpts] = useState({ vertex: true, midpoint: true, edge: true, face: true });
   const toggleSnap = (k: "vertex" | "midpoint" | "edge" | "face") =>
@@ -114,6 +118,14 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
   const [ready, setReady] = useState(false);
   // The right dock hosts EITHER the IDS panel or the BCF panel (toolbar toggles).
   const [dock, setDock] = useState<"none" | "ids" | "bcf">("none");
+  // Bottom data-table (pivot). Independent of the right dock so they can coexist;
+  // the config persists while the panel is toggled off/on.
+  const [tableOpen, setTableOpen] = useState(false);
+  const [pivotConfig, setPivotConfig] = useState<PivotConfig>({
+    groupBy: ["class"],
+    values: [], // start with just the built-in "Număr" column; add value columns via ⚙
+    showTotals: true,
+  });
 
   // Spatial view keeps the per-container class subgrouping; Class/Material views
   // are flat groupings built once at load. Only the active tree is rendered.
@@ -532,6 +544,11 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
             <span className="ic">💬</span>
             <span>BCF</span>
           </button>
+
+          <button className={"vbtn" + (tableOpen ? " active" : "")} onClick={() => setTableOpen((o) => !o)}>
+            <span className="ic">📊</span>
+            <span>Tabel</span>
+          </button>
         </div>
 
         <div className="viewer-host" ref={hostRef} style={{ position: "relative" }}>
@@ -556,8 +573,19 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
               </label>
             </div>
           )}
-          <div data-testid="viewer-status" className="viewer-status">{status}</div>
         </div>
+
+        {tableOpen && ready && storeRef.current && (
+          <DataTablePanel
+            store={storeRef.current}
+            allIDs={allIDsRef.current}
+            fileName={fileName}
+            config={pivotConfig}
+            onConfigChange={setPivotConfig}
+            onSelectRows={(ids) => selectIds(ids)}
+            onClose={() => setTableOpen(false)}
+          />
+        )}
       </div>
 
       <aside className="props-panel" style={{ width: propsWidth }}>

@@ -22,10 +22,10 @@ interface SpatialNodeLike {
   elements: number[];
 }
 
-function entityType(store: IfcDataStore, id: number): string {
+export function entityType(store: IfcDataStore, id: number): string {
   return (store as any).getEntity(id)?.type ?? "";
 }
-function entityName(store: IfcDataStore, id: number): string {
+export function entityName(store: IfcDataStore, id: number): string {
   const e = (store as any).getEntity(id);
   return e ? extractRootAttributesFromEntity(e).name ?? "" : "";
 }

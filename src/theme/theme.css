@@ -101,18 +101,6 @@ body {
   color: var(--text);
   white-space: nowrap;
 }
-.filechip {
-  max-width: 240px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.85rem;
-  color: var(--muted);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 5px 12px;
-}
 .main {
   flex: 1;
   min-height: 0;
@@ -539,6 +527,232 @@ table.summary td.k {
   background: rgba(230, 0, 126, 0.12);
   color: var(--bs-magenta);
 }
+
+/* ===== Data table (pivot) panel, docked at the bottom of the viewer ===== */
+.datatable-panel {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 140px;
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.datatable-resize {
+  position: absolute;
+  top: -5px;
+  left: 0;
+  right: 0;
+  height: 10px;
+  cursor: row-resize;
+  z-index: 5;
+}
+.datatable-resize:hover {
+  background: var(--bs-magenta);
+  opacity: 0.3;
+}
+.datatable-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.datatable-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.datatable-actions {
+  display: flex;
+  gap: 4px;
+}
+.datatable-body {
+  flex: 1;
+  overflow: auto;
+}
+.datatable-empty {
+  padding: 18px;
+  color: var(--muted);
+}
+.datatable-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+.datatable-table th,
+.datatable-table td {
+  padding: 5px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.datatable-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-2);
+  font-weight: 700;
+}
+.datatable-table .dt-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.datatable-row {
+  cursor: pointer;
+}
+.datatable-row:hover {
+  background: var(--surface-2);
+}
+.dt-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.dt-caret {
+  width: 14px;
+  color: var(--muted);
+  user-select: none;
+}
+.datatable-table tfoot .dt-total td {
+  position: sticky;
+  bottom: 0;
+  background: var(--surface-2);
+  font-weight: 700;
+  border-top: 2px solid var(--border);
+}
+
+/* ===== Lightweight modal (config popup) ===== */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 20px;
+}
+.modal {
+  display: flex;
+  flex-direction: column;
+  width: 520px;
+  max-width: 100%;
+  max-height: 85vh;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 700;
+}
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1.3rem;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+.modal-body {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+}
+.modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* Config popup contents */
+.dt-cfg-section {
+  margin-bottom: 16px;
+}
+.dt-cfg-title {
+  font-weight: 700;
+  font-size: 0.88rem;
+  margin-bottom: 8px;
+}
+.dt-cfg-hint {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-bottom: 6px;
+}
+.dt-cfg-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.dt-cfg-idx {
+  color: var(--muted);
+  width: 18px;
+}
+.dt-cfg-grow {
+  flex: 1;
+  min-width: 0;
+}
+.dt-cfg-row select,
+.dt-cfg-add {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.84rem;
+}
+.dt-cfg-add {
+  width: 100%;
+  cursor: pointer;
+}
+.dt-cfg-addbtn {
+  margin-top: 4px;
+  padding: 6px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--bs-magenta);
+  font-weight: 600;
+  cursor: pointer;
+}
+.dt-cfg-addbtn:hover {
+  background: var(--surface-2);
+}
+.dt-cfg-icon {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--muted);
+  padding: 3px 7px;
+  cursor: pointer;
+}
+.dt-cfg-icon:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.dt-cfg-icon:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.dt-cfg-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
 .ifctree {
   flex: 1;
   overflow: auto;
@@ -882,18 +1096,6 @@ table.summary td.k {
   border-color: var(--bs-teal);
   background: var(--surface-2);
 }
-.viewer-status {
-  position: absolute;
-  bottom: 10px;
-  left: 10px;
-  z-index: 10;
-  background: rgba(0, 0, 0, 0.65);
-  color: #fff;
-  padding: 5px 10px;
-  border-radius: 6px;
-  font-size: 0.8rem;
-}
-
 /* Globe (Cesium) view */
 .globe-wrap {
   position: relative;
