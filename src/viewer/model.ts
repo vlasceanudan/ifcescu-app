@@ -149,6 +149,34 @@ export function buildMaterialTree(store: IfcDataStore, allIDs: Set<number>): Tre
   return groups;
 }
 
+/**
+ * Shift a tree's renderable ids (and real positive expressIDs) into the global
+ * id space of a federated model. Synthetic group rows keep their negative
+ * expressID (cosmetic, unique within the model's subtree).
+ */
+export function offsetTree(node: TreeNode, offset: number): TreeNode {
+  return {
+    ...node,
+    expressID: node.expressID > 0 ? node.expressID + offset : node.expressID,
+    ids: node.ids.map((id) => id + offset),
+    children: node.children.map((c) => offsetTree(c, offset)),
+  };
+}
+
+/** Per-model wrapper root (type "MODEL", labeled by file name) holding a model's
+ *  forest. `rootId` must be a unique negative sentinel across the whole forest. */
+export function modelRootNode(rootId: number, fileName: string, children: TreeNode[], globalIDs: number[]): TreeNode {
+  return {
+    expressID: rootId,
+    type: "MODEL",
+    name: fileName,
+    ids: globalIDs,
+    children,
+    count: globalIDs.length,
+    defaultOpen: true,
+  };
+}
+
 /** "IFCCOLUMN" → "IfcColumn". */
 export function prettyIfcType(t: string): string {
   if (!t) return "";

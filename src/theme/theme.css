@@ -502,6 +502,70 @@ table.summary td.k {
   background: var(--bs-magenta);
   opacity: 0.3;
 }
+/* "Modele" federation section at the top of the left panel */
+.models-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.models-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.models-add {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px 8px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--bs-magenta);
+  cursor: pointer;
+}
+.models-add:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.models-add:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.models-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 2px;
+  font-size: 0.82rem;
+}
+.models-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.models-eye,
+.models-rm {
+  cursor: pointer;
+  user-select: none;
+}
+.models-rm {
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+}
+.models-rm:hover {
+  color: var(--text);
+}
+.models-busy {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
 /* Segmented view switcher (Spatial / Class / Material) at the top of the tree panel */
 .tree-tabs {
   display: flex;

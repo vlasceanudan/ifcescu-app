@@ -63,13 +63,15 @@ function Node({
   // - branch containers (have children): "IfcSite: SP4" so the class stays visible
   const groupLabel = node.name ? node.name : friendly(node.type);
   const label =
-    node.count != null
-      ? `${groupLabel} (${node.count})`
-      : !hasChildren
-        ? node.name || `${friendly(node.type)} #${node.expressID}`
-        : node.name
-          ? `${friendly(node.type)}: ${node.name}`
-          : `${friendly(node.type)} #${node.expressID}`;
+    node.type === "MODEL"
+      ? `📦 ${node.name}${node.count != null ? ` (${node.count})` : ""}`
+      : node.count != null
+        ? `${groupLabel} (${node.count})`
+        : !hasChildren
+          ? node.name || `${friendly(node.type)} #${node.expressID}`
+          : node.name
+            ? `${friendly(node.type)}: ${node.name}`
+            : `${friendly(node.type)} #${node.expressID}`;
 
   return (
     <div className="tnode">

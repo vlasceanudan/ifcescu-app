@@ -1,21 +1,21 @@
 import { type MouseEvent as ReactMouseEvent, useMemo, useState } from "react";
-import type { IfcDataStore } from "@ifc-lite/parser";
 import { DataTableConfig } from "./DataTableConfig";
 import {
   buildPivot,
   discoverFields,
   exportPivotCsv,
   type PivotConfig,
+  type PivotModel,
   type PivotRow,
 } from "../viewer/pivot";
 
 interface Props {
-  store: IfcDataStore;
-  allIDs: number[];
+  /** All federated models (the table aggregates across every loaded model). */
+  models: PivotModel[];
   fileName: string;
   config: PivotConfig;
   onConfigChange: (config: PivotConfig) => void;
-  /** Select the given elements in the 3D view (row/group click). */
+  /** Select the given GLOBAL ids in the 3D view (row/group click). */
   onSelectRows: (ids: number[]) => void;
   onClose: () => void;
 }
@@ -25,13 +25,13 @@ const fmt = (v: number | null) => (v == null ? "—" : nf.format(v));
 
 /** Bottom-docked data table (pivot): grouped rows + aggregated value columns,
  *  configured via a popup. Vertically resizable; coexists with the right dock. */
-export function DataTablePanel({ store, allIDs, fileName, config, onConfigChange, onSelectRows, onClose }: Props) {
+export function DataTablePanel({ models, fileName, config, onConfigChange, onSelectRows, onClose }: Props) {
   const [height, setHeight] = useState(300);
   const [showConfig, setShowConfig] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  const fields = useMemo(() => discoverFields(store, allIDs), [store, allIDs]);
-  const result = useMemo(() => buildPivot(store, allIDs, config), [store, allIDs, config]);
+  const fields = useMemo(() => discoverFields(models), [models]);
+  const result = useMemo(() => buildPivot(models, config), [models, config]);
 
   const toggle = (key: string) =>
     setExpanded((s) => {

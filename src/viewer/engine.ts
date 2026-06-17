@@ -2,7 +2,7 @@
 // three.js. Owns the Renderer, the camera-control wiring (orbit/pan/zoom on the
 // canvas), the render loop, picking, per-element bounds (zoom-to-selection) and
 // the renderer-Y-up → IFC coordinate conversion the measurement readout needs.
-import { Renderer, planeBasis, nearestCardinalAxis } from "@ifc-lite/renderer";
+import { Renderer, planeBasis, nearestCardinalAxis, FederationRegistry } from "@ifc-lite/renderer";
 import type { SectionPlane } from "@ifc-lite/renderer";
 import { GeometryProcessor, type MeshData } from "@ifc-lite/geometry";
 import type { IfcDataStore } from "@ifc-lite/parser";
@@ -41,11 +41,31 @@ const SNAP_PX = 14; // screen-space snap radius for measurement
 const SHARP_COS = Math.cos((50 * Math.PI) / 180);
 const SVG_NS = "http://www.w3.org/2000/svg";
 
+/** One federated model: its parsed store and the id offset applied to its
+ *  expressIds to make them globally unique across all loaded models. */
+interface LoadedModelRec {
+  store: IfcDataStore;
+  offset: number; // 0 for the first (primary) model
+  localIDs: number[];
+  globalIDs: number[];
+  rtcOffset: { x: number; y: number; z: number };
+  fileName: string;
+  // Final (id-offset + render-shifted) meshes, retained so removal can rebuild
+  // the scene (per-entity removal is unreliable on color-merged batches).
+  meshes: MeshData[];
+}
+
 export class ViewerEngine {
   readonly renderer: Renderer;
-  store: IfcDataStore | null = null;
-  allIDs: number[] = [];
-  rtcOffset = { x: 0, y: 0, z: 0 };
+  store: IfcDataStore | null = null; // primary model's store (offset 0)
+  allIDs: number[] = []; // union of all models' GLOBAL ids
+  rtcOffset = { x: 0, y: 0, z: 0 }; // shared origin (primary model)
+  // Federation: each model gets an id offset so the whole engine (pick,
+  // selection, visibility, bounds, snap) works transparently on GLOBAL ids;
+  // only store/property lookups route back per-model via `resolveGlobal`.
+  private readonly fed = new FederationRegistry();
+  private readonly models = new Map<string, LoadedModelRec>();
+  private primaryRtc: { x: number; y: number; z: number } | null = null;
   private readonly bounds = new Map<number, Bounds>();
   // Retained per-element world-space geometry (Y-up) for the selection outline.
   private readonly geom = new Map<number, { pos: Float32Array; idx: Uint32Array }[]>();
@@ -148,33 +168,144 @@ export class ViewerEngine {
     });
   }
 
-  /** Parse + stream geometry into the renderer. Returns the store and the ids that have geometry. */
+  /** Back-compat single-model load — federates as the primary model "model-0". */
   async load(bytes: Uint8Array): Promise<{ store: IfcDataStore; allIDs: number[] }> {
-    this.store = await parseStore(bytes);
+    const { store } = await this.addModel("model-0", bytes, "model-0", { fitView: true });
+    return { store, allIDs: this.allIDs };
+  }
+
+  /** Whether a model id is already federated (guards re-adds from effect re-runs). */
+  hasModel(modelId: string): boolean {
+    return this.models.has(modelId);
+  }
+
+  /** The global ids of one federated model (for per-model visibility / removal). */
+  getModelGlobalIds(modelId: string): number[] {
+    return this.models.get(modelId)?.globalIDs ?? [];
+  }
+
+  /** Map a global id back to its owning model + local expressId + store. */
+  resolveGlobal(globalId: number): { modelId: string; store: IfcDataStore; localId: number } | null {
+    const r = this.fed.fromGlobalId(globalId);
+    if (!r) return null;
+    const rec = this.models.get(r.modelId);
+    if (!rec) return null;
+    return { modelId: r.modelId, store: rec.store, localId: r.expressId };
+  }
+
+  /**
+   * Parse + stream a model into the shared scene. Each model's expressIds are
+   * offset into a global id space (first model → offset 0, so single-model
+   * behaviour is identical and primary global ids == local ids). Non-primary
+   * models stream against the primary's RTC offset so they align spatially.
+   */
+  async addModel(
+    modelId: string,
+    bytes: Uint8Array,
+    fileName: string,
+    opts?: { fitView?: boolean },
+  ): Promise<{ store: IfcDataStore; offset: number; localIDs: number[]; globalIDs: number[]; isFirst: boolean }> {
+    const existing = this.models.get(modelId);
+    if (existing) {
+      return { store: existing.store, offset: existing.offset, localIDs: existing.localIDs, globalIDs: existing.globalIDs, isFirst: existing.offset === 0 };
+    }
+    const store = await parseStore(bytes);
+    const isFirst = this.models.size === 0;
+    let maxId = 0;
+    for (const k of store.entityIndex.byId.keys()) if (k > maxId) maxId = k;
+    const offset = this.fed.registerModel(modelId, maxId);
+
+    const localIDs = new Set<number>();
+    const globalIDs = new Set<number>();
+    const collected: MeshData[] = [];
+    let rtc = { x: 0, y: 0, z: 0 };
+    // Render-space (Y-up) shift placing this model relative to the primary's
+    // origin. Primary → no shift; others → (their RTC − primary RTC). null until
+    // the RTC is known (then any buffered batches are flushed).
+    let delta: [number, number, number] | null = isFirst ? [0, 0, 0] : null;
+    const pending: MeshData[] = [];
+
+    const computeDelta = (): [number, number, number] => {
+      const p = this.primaryRtc ?? { x: 0, y: 0, z: 0 };
+      // rtc is IFC Z-up (x=E, y=N, z=up); render is Y-up (x=E, y=up, z=−N).
+      return [rtc.x - p.x, rtc.z - p.z, p.y - rtc.y];
+    };
+    const place = (meshes: MeshData[]) => {
+      const d = delta!;
+      const shift = d[0] !== 0 || d[1] !== 0 || d[2] !== 0;
+      for (const m of meshes) {
+        if (shift) {
+          const o = m.origin ?? [0, 0, 0];
+          m.origin = [o[0] + d[0], o[1] + d[1], o[2] + d[2]];
+        }
+        this.accumBounds(m);
+        this.retainGeometry(m);
+        collected.push(m);
+      }
+      this.renderer.addMeshes(meshes, true);
+      this.renderer.requestRender();
+    };
+
     const proc = new GeometryProcessor();
     await proc.init();
-    const ids = new Set<number>();
     for await (const ev of proc.processStreaming(bytes)) {
       if (this.disposed) break;
-      if (ev.type === "rtcOffset") this.rtcOffset = ev.rtcOffset;
-      else if (ev.type === "batch") {
-        this.renderer.addMeshes(ev.meshes, true);
+      if (ev.type === "rtcOffset") {
+        rtc = ev.rtcOffset;
+        if (isFirst) { this.primaryRtc = ev.rtcOffset; this.rtcOffset = ev.rtcOffset; }
+        else if (delta === null) { delta = computeDelta(); if (pending.length) { place(pending); pending.length = 0; } }
+      } else if (ev.type === "batch") {
         for (const m of ev.meshes) {
-          ids.add(m.expressId);
-          this.accumBounds(m);
-          this.retainGeometry(m);
+          if (m.expressId > maxId) continue; // defensive: id outside registered range
+          m.expressId += offset; // shift into the global id space
+          localIDs.add(m.expressId - offset);
+          globalIDs.add(m.expressId);
         }
-        this.renderer.requestRender();
-      } else if (ev.type === "complete" && ev.coordinateInfo?.wasmRtcOffset) {
-        this.rtcOffset = ev.coordinateInfo.wasmRtcOffset;
+        if (delta !== null) place(ev.meshes);
+        else pending.push(...ev.meshes); // RTC not yet known (rare) → buffer
+      } else if (ev.type === "complete" && (ev as any).coordinateInfo?.wasmRtcOffset) {
+        if (isFirst) this.rtcOffset = (ev as any).coordinateInfo.wasmRtcOffset;
+        else if (delta === null) { rtc = (ev as any).coordinateInfo.wasmRtcOffset; }
       }
     }
     proc.dispose?.();
-    this.allIDs = [...ids];
+    if (delta === null) delta = computeDelta(); // RTC arrived only at "complete"
+    if (pending.length) place(pending);
+
+    const rec: LoadedModelRec = { store, offset, localIDs: [...localIDs], globalIDs: [...globalIDs], rtcOffset: rtc, fileName, meshes: collected };
+    this.models.set(modelId, rec);
+    if (isFirst) this.store = store;
+    this.recomputeAllIDs();
     this.renderer.ensureMeshResources();
-    this.renderer.fitToView();
+    if (opts?.fitView ?? isFirst) this.renderer.fitToView();
     this.renderer.requestRender();
-    return { store: this.store, allIDs: this.allIDs };
+    return { store, offset, localIDs: rec.localIDs, globalIDs: rec.globalIDs, isFirst };
+  }
+
+  /** Remove a federated model. Per-entity removal is unreliable on color-merged
+   *  batches, so clear the scene and re-add the remaining models' meshes. */
+  removeModel(modelId: string): void {
+    const rec = this.models.get(modelId);
+    if (!rec) return;
+    for (const g of rec.globalIDs) {
+      this.bounds.delete(g);
+      this.geom.delete(g);
+      this.snapCache.delete(g);
+    }
+    this.fed.unregisterModel(modelId);
+    this.models.delete(modelId);
+    const scene = this.renderer.getScene();
+    scene.clear();
+    for (const r of this.models.values()) this.renderer.addMeshes(r.meshes, false);
+    this.recomputeAllIDs();
+    this.renderer.ensureMeshResources();
+    this.renderer.requestRender();
+  }
+
+  private recomputeAllIDs(): void {
+    const all: number[] = [];
+    for (const rec of this.models.values()) all.push(...rec.globalIDs);
+    this.allIDs = all;
   }
 
   /** Keep a CPU copy of world-space (Y-up) geometry so we can outline a selection. */

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTheme } from "./hooks/useTheme";
 import { IfcEditor } from "./ifc/editor";
 import type { ProjectInfo, SiteInfo, BeneficiarInfo, GeorefInfo } from "./ifc/editor";
@@ -20,6 +20,13 @@ interface Loaded {
   fileName: string;
 }
 
+/** A federated (non-primary) model added in the 3D viewer. */
+interface ExtraModel {
+  id: string;
+  bytes: Uint8Array;
+  fileName: string;
+}
+
 export default function App() {
   const [theme, toggleTheme] = useTheme();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -33,6 +40,9 @@ export default function App() {
   // so a new import resets them; both surface in the docked panels of the 3D viewer.
   const [idsReport, setIdsReport] = useState<IDSValidationReport | null>(null);
   const [bcfProject, setBcfProject] = useState<BCFProject | null>(null);
+  // Federated models added in the 3D viewer (beyond the primary `loaded` one).
+  const [extraModels, setExtraModels] = useState<ExtraModel[]>([]);
+  const extraSeq = useRef(0);
   const toggleFavorite = (key: string) =>
     setFavorites((s) => {
       const x = new Set(s);
@@ -47,6 +57,7 @@ export default function App() {
     setFavorites(new Set()); // reset favorites for the new model
     setIdsReport(null);
     setBcfProject(null);
+    setExtraModels([]); // federated models belonged to the previous session
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const editor = await IfcEditor.open(bytes);
@@ -78,6 +89,25 @@ export default function App() {
     if (!site) return;
     setLoaded({ ...loaded, sites: [...loaded.sites, site] });
   };
+
+  // Federation: add/remove non-primary models (3D viewer only).
+  const onAddModel = async (file: File) => {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    setExtraModels((p) => [...p, { id: `extra-${++extraSeq.current}`, bytes, fileName: file.name }]);
+  };
+  const onRemoveModel = (id: string) => setExtraModels((p) => p.filter((m) => m.id !== id));
+
+  // The uniform model list the 3D viewer federates (primary first).
+  const viewerModels = useMemo(
+    () =>
+      loaded
+        ? [
+            { id: "model-0", bytes: loaded.bytes, fileName: loaded.fileName, georef: loaded.georef, primary: true },
+            ...extraModels.map((m) => ({ id: m.id, bytes: m.bytes, fileName: m.fileName, georef: null, primary: false })),
+          ]
+        : [],
+    [loaded, extraModels],
+  );
 
   const themeBtn = (
     <button className="toggle" onClick={toggleTheme} title="Comută tema">
@@ -149,6 +179,9 @@ export default function App() {
             onBcfProject={setBcfProject}
             idsReport={idsReport}
             onIdsReport={setIdsReport}
+            models={viewerModels}
+            onAddModel={onAddModel}
+            onRemoveModel={onRemoveModel}
           />
         )}
 

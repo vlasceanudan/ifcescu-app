@@ -4,14 +4,15 @@ import type { Theme } from "../hooks/useTheme";
 import type { GeorefInfo } from "../ifc/editor";
 import { detectSchema } from "../ifc/store";
 import { ViewerEngine } from "../viewer/engine";
-import { buildTree, buildClassTree, buildMaterialTree, getSelectionProps, gatherFileInfo } from "../viewer/model";
+import { buildTree, buildClassTree, buildMaterialTree, getSelectionProps, gatherFileInfo, offsetTree, modelRootNode } from "../viewer/model";
 import { MeasureTool, type MeasureMode } from "../viewer/measure";
 import { IfcTree, type TreeNode } from "./IfcTree";
 import { PropAccordion, FileInfoPanel, type PropGroup, type FileInfo } from "./PropsPanel";
 import { BcfPanel } from "./BcfPanel";
 import { IdsPanel } from "./IdsPanel";
 import { DataTablePanel } from "./DataTablePanel";
-import type { PivotConfig } from "../viewer/pivot";
+import { ModelsPanel } from "./ModelsPanel";
+import type { PivotConfig, PivotModel } from "../viewer/pivot";
 import type { IDSValidationReport } from "../ifc/ids";
 import { createBCFFromIDSReport, addTopicToProject, type BCFProject } from "../ifc/bcf";
 
@@ -31,6 +32,19 @@ interface Props {
   /** IDS validation report (docked IDS panel lives inside the 3D viewer). */
   idsReport?: IDSValidationReport | null;
   onIdsReport?: (r: IDSValidationReport | null) => void;
+  /** Federated models (primary first). The 3D viewer aggregates all of them;
+   *  Editare/Glob/IDS/BCF stay on the primary (`bytes`/`fileName`/`georef`). */
+  models: ViewerModelInput[];
+  onAddModel: (file: File) => void;
+  onRemoveModel: (id: string) => void;
+}
+
+export interface ViewerModelInput {
+  id: string;
+  bytes: Uint8Array;
+  fileName: string;
+  georef: GeorefInfo | null;
+  primary: boolean;
 }
 
 const VIEWER_BG: Record<Theme, [number, number, number, number]> = {
@@ -73,7 +87,7 @@ function Dropdown({ label, icon, active, children }: { label: string; icon: stri
   );
 }
 
-export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavorite, bcfProject, onBcfProject, idsReport, onIdsReport }: Props) {
+export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavorite, bcfProject, onBcfProject, idsReport, onIdsReport, models, onAddModel, onRemoveModel }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<ViewerEngine | null>(null);
@@ -87,6 +101,13 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
   const selectedRef = useRef<Set<number>>(new Set());
   const lastHiddenRef = useRef<number[]>([]);
   const sectionRef = useRef(false);
+
+  // Federation: per-model store registry (keyed by model id) + which models are
+  // loaded in the engine + per-model visibility (hidden global ids and ids set).
+  const modelStoresRef = useRef<Map<string, { store: IfcDataStore; offset: number; localIDs: number[]; globalIDs: number[]; fileName: string }>>(new Map());
+  const loadedModelIdsRef = useRef<Set<string>>(new Set());
+  const hiddenModelsRef = useRef<Set<string>>(new Set());
+  const modelHiddenRef = useRef<Set<number>>(new Set());
 
   // Status is tracked (drives nothing visible now — the overlay was removed) but
   // kept so the existing setStatus call sites stay valid.
@@ -108,11 +129,16 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
   const [selHeader, setSelHeader] = useState<{ name: string; type: string } | null>(null);
   const [propsWidth, setPropsWidth] = useState(340);
   const [treeWidth, setTreeWidth] = useState(300);
-  const [tree, setTree] = useState<TreeNode | null>(null);
+  // Per-model forests (one MODEL root per model). Built by rebuildForests().
+  const [spatialRoots, setSpatialRoots] = useState<TreeNode[] | null>(null);
   const [classRoots, setClassRoots] = useState<TreeNode[] | null>(null);
   const [materialRoots, setMaterialRoots] = useState<TreeNode[] | null>(null);
   // Active left-panel view: spatial hierarchy, grouped by IFC class, or by material.
   const [treeView, setTreeView] = useState<"spatial" | "class" | "material">("spatial");
+  // Models list shown in the "Modele" panel; bumped version re-memoizes pivot input.
+  const [modelList, setModelList] = useState<{ id: string; fileName: string; primary: boolean; visible: boolean }[]>([]);
+  const [busyAdd, setBusyAdd] = useState(false);
+  const [modelsVersion, setModelsVersion] = useState(0);
   const [visibleIds, setVisibleIds] = useState<Set<number>>(new Set());
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [ready, setReady] = useState(false);
@@ -122,20 +148,23 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
   // the config persists while the panel is toggled off/on.
   const [tableOpen, setTableOpen] = useState(false);
   const [pivotConfig, setPivotConfig] = useState<PivotConfig>({
-    groupBy: ["class"],
+    // Default grouping = Model → IFC class. "model" is auto-ignored when only one
+    // model is loaded (it's not in the discovered fields then), so it falls back
+    // to grouping by class alone.
+    groupBy: ["model", "class"],
     values: [], // start with just the built-in "Număr" column; add value columns via ⚙
     showTotals: true,
   });
 
-  // Spatial view keeps the per-container class subgrouping; Class/Material views
-  // are flat groupings built once at load. Only the active tree is rendered.
-  const spatialTree = useMemo(() => (tree ? groupByClass(tree, { n: 0 }) : tree), [tree]);
-  // Active forest: Spatial wraps the single project node in an array; Class/Material
-  // are already forests of group nodes (no project wrapper).
-  const activeRoots =
-    treeView === "class" ? classRoots
-      : treeView === "material" ? materialRoots
-        : spatialTree ? [spatialTree] : null;
+  // Each view is a forest of per-model MODEL roots (built in rebuildForests).
+  const activeRoots = treeView === "class" ? classRoots : treeView === "material" ? materialRoots : spatialRoots;
+
+  // Pivot input: all loaded models' stores (memoized on the loaded-set version).
+  const pivotModels = useMemo<PivotModel[]>(
+    () => [...modelStoresRef.current.entries()].map(([id, r]) => ({ id, fileName: r.fileName, store: r.store, localIDs: r.localIDs, offset: r.offset })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [modelsVersion],
+  );
 
   useEffect(() => {
     if (!hasWebGPU) return;
@@ -162,21 +191,21 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
         engine.resize();
         if (disposed) return;
         setStatus("Se încarcă modelul IFC…");
-        const { store, allIDs } = await engine.load(bytes);
+        // Load the PRIMARY model; federated extras are added by the diff effect.
+        const primary = models.find((m) => m.primary) ?? models[0];
+        const { store, offset, localIDs, globalIDs } = await engine.addModel(primary.id, primary.bytes, primary.fileName, { fitView: true });
         if (disposed) return;
         storeRef.current = store;
-        allIDsRef.current = allIDs;
-        setVisibleIds(new Set(allIDs));
+        allIDsRef.current = engine.allIDs;
+        modelStoresRef.current.set(primary.id, { store, offset, localIDs, globalIDs, fileName: primary.fileName });
+        loadedModelIdsRef.current.add(primary.id);
+        setVisibleIds(new Set(engine.allIDs));
 
         measureRef.current = new MeasureTool(engine, host);
         measureRef.current.setGeoref(georefRef.current);
         engine.onSectionMove = (pos) => setSecPos(pos); // keep the slider in sync with the drag handle
         wireEvents(host);
 
-        const idset = new Set(allIDs);
-        setTree(buildTree(store, idset));
-        setClassRoots(buildClassTree(store, idset));
-        setMaterialRoots(buildMaterialTree(store, idset));
         // Model centroid in IFC absolute coords (handles real-coordinate models
         // whose IfcMapConversion has a zero Eastings/Northings offset).
         const mb = engine.modelBounds();
@@ -184,7 +213,7 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
           ? engine.worldToIfc({ x: (mb.min[0] + mb.max[0]) / 2, y: (mb.min[1] + mb.max[1]) / 2, z: (mb.min[2] + mb.max[2]) / 2 })
           : { x: engine.rtcOffset.x, y: engine.rtcOffset.y, z: engine.rtcOffset.z };
         setFileInfo(
-          gatherFileInfo(store, allIDs.length, bytes.length, fileName, detectSchema(bytes), georefRef.current, centroid),
+          gatherFileInfo(store, globalIDs.length, bytes.length, fileName, detectSchema(bytes), georefRef.current, centroid),
         );
         setStatus("Model încărcat • orbit: stânga • pan: dreapta/mijloc • zoom: scroll • Esc: anulează");
         setReady(true);
@@ -214,6 +243,47 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
     georefRef.current = georef;
     measureRef.current?.setGeoref(georef);
   }, [georef]);
+
+  // Federation: react to the models list — add newcomers, remove the departed,
+  // then rebuild the per-model forests. Runs once primary is ready, then on every
+  // models change. Guarded against duplicate adds (StrictMode / re-runs).
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine || !ready) return;
+    let cancelled = false;
+    (async () => {
+      for (const m of models) {
+        if (loadedModelIdsRef.current.has(m.id) || engine.hasModel(m.id)) continue;
+        setBusyAdd(true);
+        try {
+          const { store, offset, localIDs, globalIDs } = await engine.addModel(m.id, m.bytes, m.fileName, { fitView: false });
+          if (cancelled) return;
+          modelStoresRef.current.set(m.id, { store, offset, localIDs, globalIDs, fileName: m.fileName });
+          loadedModelIdsRef.current.add(m.id);
+        } catch (e) {
+          console.error("Federare: nu am putut adăuga modelul", m.fileName, e);
+        }
+      }
+      for (const id of [...loadedModelIdsRef.current]) {
+        if (models.some((m) => m.id === id)) continue;
+        engine.removeModel(id);
+        const rec = modelStoresRef.current.get(id);
+        if (rec) for (const g of rec.globalIDs) modelHiddenRef.current.delete(g);
+        hiddenModelsRef.current.delete(id);
+        modelStoresRef.current.delete(id);
+        loadedModelIdsRef.current.delete(id);
+      }
+      if (cancelled) return;
+      setBusyAdd(false);
+      allIDsRef.current = engine.allIDs;
+      rebuildForests();
+      applyVisibility();
+      setModelList(models.map((m) => ({ id: m.id, fileName: m.fileName, primary: m.primary, visible: !hiddenModelsRef.current.has(m.id) })));
+      setModelsVersion((v) => v + 1);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [models, ready]);
 
   // Turning the section tool OFF removes the plane. Turning it ON only ARMS the
   // tool — the plane is created when the user double-clicks a face.
@@ -310,9 +380,10 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
     setSelectedIds(new Set(ids));
     engineRef.current?.setSelectionOutline(ids);
     const propId = expressID ?? (ids.length === 1 ? ids[0] : undefined);
-    const store = storeRef.current;
-    if (propId != null && store) {
-      const { header, groups } = getSelectionProps(store, propId);
+    // Route the global id back to its owning model's store for properties.
+    const r = propId != null ? engineRef.current?.resolveGlobal(propId) : null;
+    if (r) {
+      const { header, groups } = getSelectionProps(r.store, r.localId);
       setSelHeader(header);
       setPropGroups(groups);
       setPropsKey((k) => k + 1);
@@ -330,16 +401,58 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
     setSelHeader(null);
   };
 
+  // Rebuild the three per-model forests (one MODEL root per loaded model). Spatial
+  // keeps the per-container class subgrouping; ids are offset into global space.
+  const rebuildForests = () => {
+    const spatial: TreeNode[] = [];
+    const cls: TreeNode[] = [];
+    const mat: TreeNode[] = [];
+    let idx = 0;
+    for (const m of models) {
+      const rec = modelStoresRef.current.get(m.id);
+      if (!rec) continue;
+      const rootId = -(2_000_000 + idx);
+      const localSet = new Set(rec.localIDs);
+      const sRaw = buildTree(rec.store, localSet);
+      const sGrouped = sRaw ? groupByClass(sRaw, { n: 0 }) : null;
+      spatial.push(modelRootNode(rootId, rec.fileName, sGrouped ? [offsetTree(sGrouped, rec.offset)] : [], rec.globalIDs));
+      cls.push(modelRootNode(rootId, rec.fileName, buildClassTree(rec.store, localSet).map((n) => offsetTree(n, rec.offset)), rec.globalIDs));
+      mat.push(modelRootNode(rootId, rec.fileName, buildMaterialTree(rec.store, localSet).map((n) => offsetTree(n, rec.offset)), rec.globalIDs));
+      idx++;
+    }
+    setSpatialRoots(spatial);
+    setClassRoots(cls);
+    setMaterialRoots(mat);
+  };
+
   // --- visibility ---------------------------------------------------------
   const applyVisibility = () => {
     const eng = engineRef.current;
     if (!eng) return;
-    eng.setState({ hiddenIds: new Set(hiddenRef.current), isolatedIds: isolatedRef.current ? new Set(isolatedRef.current) : null });
+    // Effective hidden = element-level hides ∪ per-model hides.
+    const hidden = new Set<number>(hiddenRef.current);
+    for (const id of modelHiddenRef.current) hidden.add(id);
+    eng.setState({ hiddenIds: hidden, isolatedIds: isolatedRef.current ? new Set(isolatedRef.current) : null });
     const all = allIDsRef.current;
     const iso = isolatedRef.current;
     const next = new Set<number>(iso ? [...iso] : all);
-    for (const id of hiddenRef.current) next.delete(id);
+    for (const id of hidden) next.delete(id);
     setVisibleIds(next);
+  };
+
+  // Per-model visibility toggle (folds the model's global ids into the hidden set).
+  const toggleModelVisible = (id: string, visible: boolean) => {
+    const rec = modelStoresRef.current.get(id);
+    if (!rec) return;
+    if (visible) {
+      hiddenModelsRef.current.delete(id);
+      for (const g of rec.globalIDs) modelHiddenRef.current.delete(g);
+    } else {
+      hiddenModelsRef.current.add(id);
+      for (const g of rec.globalIDs) modelHiddenRef.current.add(g);
+    }
+    applyVisibility();
+    setModelList((l) => l.map((m) => (m.id === id ? { ...m, visible } : m)));
   };
   const hideIds = (ids: number[]) => {
     for (const id of ids) hiddenRef.current.add(id);
@@ -464,6 +577,13 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
   return (
     <div className="viewer-wrap">
       <aside className="ifctree-panel" style={{ width: treeWidth }}>
+        <ModelsPanel
+          models={modelList}
+          busy={busyAdd}
+          onToggleVisible={toggleModelVisible}
+          onRemove={onRemoveModel}
+          onAddModel={onAddModel}
+        />
         <div className="tree-tabs">
           <button className={"tree-tab" + (treeView === "spatial" ? " active" : "")} onClick={() => setTreeView("spatial")}>Spațial</button>
           <button className={"tree-tab" + (treeView === "class" ? " active" : "")} onClick={() => setTreeView("class")}>Clase</button>
@@ -575,10 +695,9 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
           )}
         </div>
 
-        {tableOpen && ready && storeRef.current && (
+        {tableOpen && ready && pivotModels.length > 0 && (
           <DataTablePanel
-            store={storeRef.current}
-            allIDs={allIDsRef.current}
+            models={pivotModels}
             fileName={fileName}
             config={pivotConfig}
             onConfigChange={setPivotConfig}

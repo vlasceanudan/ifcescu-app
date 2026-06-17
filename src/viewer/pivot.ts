@@ -17,7 +17,7 @@ export type FieldKind = "categorical" | "numeric";
 export interface FieldDef {
   key: string;
   label: string;
-  source: "class" | "material" | "property" | "quantity";
+  source: "model" | "class" | "material" | "property" | "quantity";
   pset?: string;
   name?: string;
   kind: FieldKind;
@@ -77,9 +77,36 @@ function coerceNumeric(v: unknown): number | null {
 // --- field discovery (memoised per store) ---------------------------------
 const fieldCache = new WeakMap<IfcDataStore, FieldDef[]>();
 
-/** All fields available for grouping/aggregation: Class + Material pseudo-fields,
- *  then every distinct property and quantity name found across the elements. */
-export function discoverFields(store: IfcDataStore, allIDs: number[]): FieldDef[] {
+/** One federated model's data for the pivot: its store, the renderable LOCAL
+ *  ids, and the id offset that turns those into global ids (for 3D selection). */
+export interface PivotModel {
+  id: string;
+  fileName: string;
+  store: IfcDataStore;
+  localIDs: number[];
+  offset: number;
+}
+
+/** All fields available across ALL models: Model + Class + Material pseudo-fields,
+ *  then every distinct property/quantity name unioned over the models' stores. */
+export function discoverFields(models: PivotModel[]): FieldDef[] {
+  const byKey = new Map<string, FieldDef>();
+  // "Model" only makes sense to group by when more than one model is loaded.
+  if (models.length > 1) byKey.set("model", { key: "model", label: "Model", source: "model", kind: "categorical" });
+  byKey.set("class", { key: "class", label: "Clasă IFC", source: "class", kind: "categorical" });
+  byKey.set("material", { key: "material", label: "Material", source: "material", kind: "categorical" });
+  for (const m of models) {
+    for (const f of discoverFieldsForStore(m.store, m.localIDs)) {
+      const ex = byKey.get(f.key);
+      if (!ex) byKey.set(f.key, { ...f });
+      else if (f.kind === "numeric") ex.kind = "numeric"; // numeric wins across stores
+    }
+  }
+  return [...byKey.values()].sort(fieldSort);
+}
+
+/** Per-store field discovery (memoised per store, keyed by local ids). */
+function discoverFieldsForStore(store: IfcDataStore, allIDs: number[]): FieldDef[] {
   const cached = fieldCache.get(store);
   if (cached) return cached;
 
@@ -124,9 +151,9 @@ export function discoverFields(store: IfcDataStore, allIDs: number[]): FieldDef[
   return fields;
 }
 
-// Keep Class/Material first, then alphabetical by label.
+// Keep Model/Class/Material first, then alphabetical by label.
 function fieldSort(a: FieldDef, b: FieldDef): number {
-  const rank = (f: FieldDef) => (f.key === "class" ? 0 : f.key === "material" ? 1 : 2);
+  const rank = (f: FieldDef) => (f.key === "model" ? 0 : f.key === "class" ? 1 : f.key === "material" ? 2 : 3);
   return rank(a) - rank(b) || a.label.localeCompare(b.label, "ro");
 }
 
@@ -207,13 +234,22 @@ export function getFieldValue(store: IfcDataStore, id: number, field: FieldDef):
 }
 
 // --- aggregation ----------------------------------------------------------
-function aggregate(store: IfcDataStore, fields: FieldDef[], ids: number[], col: ValueColumn): number | null {
-  if (col.agg === "count") return ids.length;
+// An element flattened across models: its owning store, local id (for value
+// lookups), global id (for 3D selection) and model name (for the "Model" field).
+interface Elem { store: IfcDataStore; local: number; global: number; model: string; }
+
+/** Resolve a field's value for one element, handling the model pseudo-field. */
+function elemValue(e: Elem, field: FieldDef): string | number | null {
+  return field.source === "model" ? e.model : getFieldValue(e.store, e.local, field);
+}
+
+function aggregate(fields: FieldDef[], elems: Elem[], col: ValueColumn): number | null {
+  if (col.agg === "count") return elems.length;
   const field = fieldByKey(fields, col.fieldKey);
   if (!field) return null;
   let sum = 0, n = 0, min = Infinity, max = -Infinity;
-  for (const id of ids) {
-    const v = getFieldValue(store, id, field);
+  for (const e of elems) {
+    const v = elemValue(e, field);
     const num = typeof v === "number" ? v : coerceNumeric(v);
     if (num == null) continue;
     sum += num; n++;
@@ -230,44 +266,48 @@ function aggregate(store: IfcDataStore, fields: FieldDef[], ids: number[], col: 
   return null;
 }
 
-/** Group `ids` by the nested group-by fields and compute the value columns. */
-export function buildPivot(store: IfcDataStore, ids: number[], config: PivotConfig): PivotResult {
-  const fields = discoverFields(store, ids);
+/** Group all models' elements by the nested group-by fields and compute the
+ *  value columns. Row `ids` are GLOBAL ids so a row click selects in 3D. */
+export function buildPivot(models: PivotModel[], config: PivotConfig): PivotResult {
+  const fields = discoverFields(models);
   const groupFields = config.groupBy.map((k) => fieldByKey(fields, k)).filter(Boolean) as FieldDef[];
 
-  const makeRows = (subset: number[], depth: number): PivotRow[] => {
+  const elems: Elem[] = [];
+  for (const m of models) for (const l of m.localIDs) elems.push({ store: m.store, local: l, global: l + m.offset, model: m.fileName });
+
+  const makeRows = (subset: Elem[], depth: number): PivotRow[] => {
     if (depth >= groupFields.length) return [];
     const field = groupFields[depth];
-    const buckets = new Map<string, number[]>();
-    for (const id of subset) {
-      const v = getFieldValue(store, id, field);
+    const buckets = new Map<string, Elem[]>();
+    for (const e of subset) {
+      const v = elemValue(e, field);
       const label = v == null || v === "" ? NO_VALUE : String(v);
       const arr = buckets.get(label);
-      if (arr) arr.push(id);
-      else buckets.set(label, [id]);
+      if (arr) arr.push(e);
+      else buckets.set(label, [e]);
     }
     const rows: PivotRow[] = [];
-    for (const [label, bucketIds] of buckets) {
+    for (const [label, bucket] of buckets) {
       rows.push({
         label,
         depth,
-        ids: bucketIds,
-        count: bucketIds.length,
-        values: config.values.map((c) => aggregate(store, fields, bucketIds, c)),
-        children: makeRows(bucketIds, depth + 1),
+        ids: bucket.map((e) => e.global),
+        count: bucket.length,
+        values: config.values.map((c) => aggregate(fields, bucket, c)),
+        children: makeRows(bucket, depth + 1),
       });
     }
     rows.sort(rowSort);
     return rows;
   };
 
-  const rows = groupFields.length ? makeRows(ids, 0) : [];
+  const rows = groupFields.length ? makeRows(elems, 0) : [];
   return {
     columns: config.values.map((c) => ({ label: valueColumnLabel(fields, c) })),
     rows,
     totals: {
-      count: ids.length,
-      values: config.values.map((c) => aggregate(store, fields, ids, c)),
+      count: elems.length,
+      values: config.values.map((c) => aggregate(fields, elems, c)),
     },
   };
 }
