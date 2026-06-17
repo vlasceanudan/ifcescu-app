@@ -5,6 +5,7 @@ interface ModelRow {
   fileName: string;
   primary: boolean;
   visible: boolean;
+  schema: string;
 }
 
 interface Props {
@@ -29,6 +30,7 @@ export function ModelsPanel({ models, busy, onToggleVisible, onRemove, onAddMode
       </div>
       {models.map((m) => (
         <div className="models-row" key={m.id}>
+          <span className="models-status" title="Model încărcat" />
           <span
             className="models-eye"
             title={m.visible ? "Ascunde modelul" : "Afișează modelul"}
@@ -39,6 +41,7 @@ export function ModelsPanel({ models, busy, onToggleVisible, onRemove, onAddMode
           <span className="models-name" title={m.fileName}>
             {m.fileName}{m.primary ? " ★" : ""}
           </span>
+          {m.schema && <span className="models-badge" title="Schemă IFC">{m.schema}</span>}
           {!m.primary && (
             <span className="models-rm" title="Elimină modelul" onClick={() => onRemove(m.id)}>×</span>
           )}

@@ -61,17 +61,25 @@ body {
   overflow: hidden;
 }
 .topbar {
+  position: relative; /* anchor for the absolutely-centred tab nav */
   flex: 0 0 auto;
-  height: 56px;
+  height: 58px;
   display: flex;
   align-items: center;
   gap: 14px;
   padding: 0 16px;
   border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--bg);
 }
 .spacer {
   flex: 1;
+}
+/* Right-hand topbar group (Schimbă fișier + settings menu) */
+.topbar-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .brand {
   display: flex;
@@ -186,24 +194,35 @@ body {
   border-bottom-color: var(--bs-magenta);
 }
 
-/* Tabs inside the top bar: segmented pills, no bottom rule */
+/* Tabs inside the top bar: centred segmented pills, no bottom rule */
 .topbar-tabs {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   border-bottom: none;
   margin-bottom: 0;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-2);
+  border-radius: 12px;
 }
 .topbar-tabs .tab {
-  padding: 7px 14px;
-  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border-radius: 9px;
   border-bottom: none;
-  font-size: 0.92rem;
+  font-size: 0.9rem;
 }
 .topbar-tabs .tab:hover {
-  background: var(--surface-2);
+  background: var(--bg);
 }
 .topbar-tabs .tab.active {
-  background: rgba(230, 0, 126, 0.12);
+  background: var(--bg);
   color: var(--bs-magenta);
   border-bottom: none;
+  box-shadow: var(--shadow);
 }
 
 /* Cards / sections */
@@ -1745,4 +1764,87 @@ table.summary td.k {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ===== Top-bar dark-mode toggle (round icon button) ===== */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+}
+.theme-toggle:hover {
+  border-color: var(--bs-magenta);
+  color: var(--bs-magenta);
+}
+
+/* ===== Floating quick-action bar at the bottom of the viewer ===== */
+.viewbar {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.18);
+}
+.viewbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+}
+.viewbar-btn:hover {
+  background: var(--surface-2);
+  color: var(--bs-magenta);
+}
+.viewbar-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border);
+  margin: 4px 4px;
+}
+
+/* ===== Models panel row badges ===== */
+.models-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #30a46c; /* loaded = green */
+  flex: 0 0 auto;
+}
+.models-badge {
+  flex: 0 0 auto;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+
+/* Viewer area expands cleanly when fullscreened */
+.viewer-main:fullscreen {
+  background: var(--bg);
+  padding: 8px;
 }

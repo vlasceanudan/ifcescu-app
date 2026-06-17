@@ -726,14 +726,32 @@ export class ViewerEngine {
     this.renderer.requestRender();
   }
 
+  /** Frame ALL loaded (federated) models — a single deterministic view that
+   *  always frames everything currently loaded. */
   fit(): void {
-    this.renderer.fitToView();
-    this.renderer.requestRender();
+    this.frameDir(this.modelBounds(), [1, 1, 1]);
+  }
+
+  /** "Home": return to the PRIMARY (first-loaded, offset 0) model at an isometric
+   *  angle — a stable anchor when several models are federated. */
+  homeView(): void {
+    let primary: LoadedModelRec | undefined;
+    for (const r of this.models.values()) if (r.offset === 0) { primary = r; break; }
+    const b = primary ? this.selectionBounds(primary.globalIDs) : this.modelBounds();
+    this.frameDir(b, [1, 1, 1]);
   }
 
   /** Orbit the camera by raw pixel deltas (used by the nav-cube drag). */
   orbit(dx: number, dy: number): void {
     this.renderer.getCamera().orbit(dx * ORBIT_SENS, dy * ORBIT_SENS, false);
+    this.renderer.requestRender();
+  }
+
+  /** Zoom toward the viewport centre by a wheel-like delta (nav-bar +/- buttons).
+   *  Negative = zoom in, positive = zoom out (matches wheel deltaY). */
+  zoomBy(delta: number): void {
+    const w = this.canvas.clientWidth || 1, h = this.canvas.clientHeight || 1;
+    this.renderer.getCamera().zoom(delta, false, w / 2, h / 2, w, h);
     this.renderer.requestRender();
   }
 
@@ -743,13 +761,11 @@ export class ViewerEngine {
     this.renderer.requestRender();
   }
 
-  /** Look at the model centre from an arbitrary render-space direction (used by
-   *  the nav-cube edges/corners for oblique/isometric views). */
-  setViewDirection(dir: [number, number, number]): void {
-    const mb = this.modelBounds();
-    if (!mb) return;
-    const c: [number, number, number] = [(mb.min[0] + mb.max[0]) / 2, (mb.min[1] + mb.max[1]) / 2, (mb.min[2] + mb.max[2]) / 2];
-    const radius = 0.5 * Math.hypot(mb.max[0] - mb.min[0], mb.max[1] - mb.min[1], mb.max[2] - mb.min[2]) || 1;
+  /** Frame a bounds box from a render-space direction (shared by view presets). */
+  private frameDir(b: Bounds | null, dir: [number, number, number]): void {
+    if (!b) return;
+    const c: [number, number, number] = [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2];
+    const radius = 0.5 * Math.hypot(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]) || 1;
     const len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
     const d: [number, number, number] = [dir[0] / len, dir[1] / len, dir[2] / len];
     const dist = radius * 2.5;
@@ -760,6 +776,12 @@ export class ViewerEngine {
     if (Math.abs(d[1]) > 0.99) cam.setUp(0, 0, -1);
     else cam.setUp(0, 1, 0);
     this.renderer.requestRender();
+  }
+
+  /** Look at ALL models' centre from an arbitrary render-space direction (used by
+   *  the nav-cube edges/corners and the Izometric preset). */
+  setViewDirection(dir: [number, number, number]): void {
+    this.frameDir(this.modelBounds(), dir);
   }
 
   /** CSS matrix3d (rotation only) mirroring the camera orientation, for the

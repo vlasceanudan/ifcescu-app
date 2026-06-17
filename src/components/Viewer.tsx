@@ -13,6 +13,7 @@ import { IdsPanel } from "./IdsPanel";
 import { DataTablePanel } from "./DataTablePanel";
 import { ModelsPanel } from "./ModelsPanel";
 import { NavCube } from "./NavCube";
+import { ViewBar } from "./ViewBar";
 import type { PivotConfig, PivotModel } from "../viewer/pivot";
 import type { IDSValidationReport } from "../ifc/ids";
 import { createBCFFromIDSReport, addTopicToProject, type BCFProject } from "../ifc/bcf";
@@ -104,6 +105,7 @@ function ViewIcon({ kind }: { kind: "iso" | "up" | "down" | "left" | "right" | "
 
 export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavorite, bcfProject, onBcfProject, idsReport, onIdsReport, models, onAddModel, onRemoveModel }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<ViewerEngine | null>(null);
   const measureRef = useRef<MeasureTool | null>(null);
@@ -152,9 +154,10 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
   // Active left-panel view: spatial hierarchy, grouped by IFC class, or by material.
   const [treeView, setTreeView] = useState<"spatial" | "class" | "material">("spatial");
   // Models list shown in the "Modele" panel; bumped version re-memoizes pivot input.
-  const [modelList, setModelList] = useState<{ id: string; fileName: string; primary: boolean; visible: boolean }[]>([]);
+  const [modelList, setModelList] = useState<{ id: string; fileName: string; primary: boolean; visible: boolean; schema: string }[]>([]);
   const [busyAdd, setBusyAdd] = useState(false);
   const [modelsVersion, setModelsVersion] = useState(0);
+  const [fullscreen, setFullscreen] = useState(false);
   const [visibleIds, setVisibleIds] = useState<Set<number>>(new Set());
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [ready, setReady] = useState(false);
@@ -294,7 +297,7 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
       allIDsRef.current = engine.allIDs;
       rebuildForests();
       applyVisibility();
-      setModelList(models.map((m) => ({ id: m.id, fileName: m.fileName, primary: m.primary, visible: !hiddenModelsRef.current.has(m.id) })));
+      setModelList(models.map((m) => ({ id: m.id, fileName: m.fileName, primary: m.primary, visible: !hiddenModelsRef.current.has(m.id), schema: detectSchema(m.bytes) })));
       setModelsVersion((v) => v + 1);
     })();
     return () => { cancelled = true; };
@@ -306,6 +309,17 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
   useEffect(() => {
     if (!section) engineRef.current?.clearSection();
   }, [section]);
+
+  // Keep the fullscreen flag in sync (handles Esc / external exit too).
+  useEffect(() => {
+    const onFs = () => setFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else mainRef.current?.requestFullscreen?.();
+  };
 
   // Keyboard: Esc cancels; H hide/restore selection; Z zoom extents; F frame selection.
   useEffect(() => {
@@ -329,8 +343,6 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
         toggleSection();
       } else if (e.key === "Delete" || e.key === "Backspace") {
         if (measureRef.current?.hasSelection()) { e.preventDefault(); measureRef.current.deleteSelected(); }
-      } else if (e.key === "0") {
-        engineRef.current?.setViewDirection([1, 1, 1]); // izometric (corner view + frame)
       } else if (e.key === "1") {
         engineRef.current?.setPresetView("top");
       } else if (e.key === "2") {
@@ -643,7 +655,7 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
         <div className="tree-resize" onMouseDown={startTreeResize} title="Trageți pentru redimensionare" />
       </aside>
 
-      <div className="viewer-main">
+      <div className="viewer-main" ref={mainRef}>
         <div className="vtoolbar">
           <Dropdown label="Măsurare" icon="📐" active={measureMode !== "none"}>
             <button className={"vmenu-item" + (measureMode === "length" ? " active" : "")} onClick={() => chooseMeasure("length")}><span className="ic">📏</span> Lungime</button>
@@ -696,9 +708,6 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
           <span className="vsep" />
 
           <Dropdown label="Vederi" icon="🎥">
-            <button className="vmenu-item" onClick={() => engineRef.current?.setViewDirection([1, 1, 1])}>
-              <span className="ic"><ViewIcon kind="iso" /></span><span>Izometric</span><span className="vmenu-key">0</span>
-            </button>
             <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("top")}>
               <span className="ic"><ViewIcon kind="up" /></span><span>Sus</span><span className="vmenu-key">1</span>
             </button>
@@ -748,6 +757,16 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
               getTransform={() => engineRef.current?.cubeMatrix() ?? ""}
               onFace={(v) => engineRef.current?.setPresetView(v)}
               onOrbit={(dx, dy) => engineRef.current?.orbit(dx, dy)}
+            />
+          )}
+          {ready && (
+            <ViewBar
+              onHome={() => engineRef.current?.homeView()}
+              onFit={() => engineRef.current?.fit()}
+              onZoomIn={() => engineRef.current?.zoomBy(-200)}
+              onZoomOut={() => engineRef.current?.zoomBy(200)}
+              onFullscreen={toggleFullscreen}
+              fullscreen={fullscreen}
             />
           )}
           {section && (
