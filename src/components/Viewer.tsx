@@ -51,7 +51,7 @@ export interface ViewerModelInput {
 
 const VIEWER_BG: Record<Theme, [number, number, number, number]> = {
   light: [0.933, 0.941, 0.957, 1],
-  dark: [0.082, 0.086, 0.102, 1],
+  dark: [0.039, 0.055, 0.102, 1], // deep navy, matches the dark UI (#0a0e1a)
 };
 const hasWebGPU = typeof navigator !== "undefined" && "gpu" in navigator && !!(navigator as any).gpu;
 

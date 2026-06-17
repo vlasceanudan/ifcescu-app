@@ -6,27 +6,30 @@
   --bs-blue: #1d4f91;
   --bs-purple: #92278f;
 
-  /* light surfaces (default) */
-  --bg: #ffffff;
-  --surface: #f4f4f7;
-  --surface-2: #ececf1;
-  --text: #2b2b2b;
-  --muted: #5a5a5a;
-  --border: #e2e2e8;
+  /* light surfaces (default) — white cards floating on a light-gray page */
+  --app-bg: #f3f4f7; /* page background behind the cards */
+  --bg: #ffffff; /* elevated: topbar, popups */
+  --surface: #ffffff; /* panels = white cards */
+  --surface-2: #f1f2f5; /* secondary fills: hover, table heads, chips */
+  --text: #232733;
+  --muted: #6b7280;
+  --border: #e8e9ef;
   --viewer-bg: #eef0f4;
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 6px 16px rgba(16, 24, 40, 0.06);
   --logo-building: #2b2b2b; /* "building" letters in light mode */
 }
 
 :root[data-theme="dark"] {
-  --bg: #15161a;
-  --surface: #1e2026;
-  --surface-2: #24262e;
-  --text: #ececec;
-  --muted: #a8a8b0;
-  --border: #2c2e36;
-  --viewer-bg: #15161a;
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  /* Deep navy-blue, matching the buildingSMART.ro dark site. */
+  --app-bg: #0a0e1a; /* page background (near-black navy) */
+  --bg: #111726; /* elevated: topbar, popups */
+  --surface: #111726; /* panels (lighter than the page) */
+  --surface-2: #1a2133;
+  --text: #eef1f8;
+  --muted: #8b93a7;
+  --border: #232c42;
+  --viewer-bg: #0a0e1a;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.5);
   --logo-building: #eef1fa; /* "building" letters in dark mode (near-white) */
 }
 
@@ -43,10 +46,10 @@ body,
    panel and toolbar (all sized in rem) read at a comfortable size comparable to
    other IFC viewers. Change this one value to rescale all rem-based text. */
 html {
-  font-size: 18px;
+  font-size: 17px;
 }
 body {
-  background: var(--bg);
+  background: var(--app-bg);
   color: var(--text);
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
   line-height: 1.5;
@@ -99,13 +102,13 @@ body {
 }
 .brand-logo svg,
 .brand img {
-  height: 34px;
+  height: 38px;
   width: auto;
   display: block;
 }
 .brand-name {
   font-weight: 700;
-  font-size: 1.02rem;
+  font-size: 1.1rem;
   color: var(--text);
   white-space: nowrap;
 }
@@ -114,6 +117,7 @@ body {
   min-height: 0;
   overflow: hidden;
   position: relative;
+  background: var(--app-bg);
 }
 
 /* Editing tab: comfortable centered, scrollable column */
@@ -194,35 +198,37 @@ body {
   border-bottom-color: var(--bs-magenta);
 }
 
-/* Tabs inside the top bar: centred segmented pills, no bottom rule */
+/* Tabs inside the top bar: centred outlined chips (active = soft magenta) */
 .topbar-tabs {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
   border-bottom: none;
   margin-bottom: 0;
-  gap: 4px;
-  padding: 4px;
-  background: var(--surface-2);
-  border-radius: 12px;
+  gap: 6px;
+  padding: 0;
+  background: transparent;
 }
 .topbar-tabs .tab {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px 14px;
-  border-radius: 9px;
-  border-bottom: none;
-  font-size: 0.9rem;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.92rem;
 }
 .topbar-tabs .tab:hover {
-  background: var(--bg);
+  background: var(--surface-2);
+  color: var(--text);
 }
 .topbar-tabs .tab.active {
-  background: var(--bg);
+  background: rgba(230, 0, 126, 0.1);
+  border-color: rgba(230, 0, 126, 0.35);
   color: var(--bs-magenta);
-  border-bottom: none;
-  box-shadow: var(--shadow);
+  box-shadow: none;
 }
 
 /* Cards / sections */
@@ -394,11 +400,12 @@ table.summary td.k {
 .vtoolbar {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 5px 6px;
+  gap: 4px;
+  padding: 6px 8px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
+  box-shadow: var(--shadow);
   margin-bottom: 10px;
   flex-wrap: wrap;
 }
@@ -579,8 +586,9 @@ table.summary td.k {
   min-width: 200px;
   max-width: 560px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--surface);
+  box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
 }
@@ -634,11 +642,16 @@ table.summary td.k {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 1px 2px;
+  padding: 5px 6px;
+  border-radius: 8px;
   font-size: 0.82rem;
+}
+.models-row:hover {
+  background: var(--surface-2);
 }
 .models-name {
   flex: 1;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -696,8 +709,9 @@ table.summary td.k {
   min-height: 140px;
   margin-top: 10px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--surface);
+  box-shadow: var(--shadow);
   overflow: hidden;
 }
 .datatable-resize {
@@ -971,9 +985,10 @@ table.summary td.k {
   height: auto;
   min-height: 0;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   overflow: hidden;
   background: var(--viewer-bg);
+  box-shadow: var(--shadow);
 }
 /* Canvas + postproduction overlay always fill the host, so resizing a panel
    stretches them smoothly (no flicker); the renderer re-sizes crisply after. */
@@ -992,8 +1007,9 @@ table.summary td.k {
   min-width: 260px;
   max-width: 640px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--surface);
+  box-shadow: var(--shadow);
 }
 .props-resize {
   position: absolute;
