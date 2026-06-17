@@ -658,9 +658,9 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
       <div className="viewer-main" ref={mainRef}>
         <div className="vtoolbar">
           <Dropdown label="Măsurare" icon="📐" active={measureMode !== "none"}>
-            <button className={"vmenu-item" + (measureMode === "length" ? " active" : "")} onClick={() => chooseMeasure("length")}><span className="ic">📏</span> Lungime</button>
+            <button className={"vmenu-item" + (measureMode === "length" ? " active" : "")} onClick={() => chooseMeasure("length")}><span className="ic">📏</span> Distanță</button>
             <button className={"vmenu-item" + (measureMode === "point" ? " active" : "")} onClick={() => chooseMeasure("point")}><span className="ic">📍</span> Punct</button>
-            <button className={"vmenu-item" + (measureMode === "area" ? " active" : "")} onClick={() => chooseMeasure("area")}><span className="ic">▱</span> Arie</button>
+            <button className={"vmenu-item" + (measureMode === "area" ? " active" : "")} onClick={() => chooseMeasure("area")}><span className="ic">▱</span> Suprafață</button>
             <div className="vmenu-sep" />
             <div onClick={(e) => e.stopPropagation()} style={{ padding: "4px 12px", fontSize: 12 }}>
               <div style={{ opacity: 0.7, margin: "2px 0 4px" }}>Snap la:</div>
@@ -671,10 +671,7 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
               ))}
             </div>
             <div className="vmenu-sep" />
-            <button className="vmenu-item" onClick={() => measureRef.current?.deleteSelected()}>
-              <span className="ic">🗑</span><span>Șterge măsurătoarea selectată</span><span className="vmenu-key">Del</span>
-            </button>
-            <button className="vmenu-item danger" onClick={() => measureRef.current?.clearAll()}><span className="ic">🗑</span><span>Șterge toate măsurătorile</span></button>
+            <button className="vmenu-item danger" onClick={() => measureRef.current?.clearAll()}><span className="ic">🗑</span><span>Șterge măsurătorile</span></button>
           </Dropdown>
 
           <span className="vsep" />

@@ -286,7 +286,7 @@ export class MeasureTool {
       const area = polygonArea(m.pts);
       const cx = scr.reduce((a, c) => a + (c?.x ?? 0), 0) / scr.length;
       const cy = scr.reduce((a, c) => a + (c?.y ?? 0), 0) / scr.length;
-      this.label(`Arie ${area.toFixed(2)} m²\nPerimetru ${per.toFixed(2)} m`, cx, cy);
+      this.label(`Suprafață ${area.toFixed(2)} m²\nPerimetru ${per.toFixed(2)} m`, cx, cy);
     }
   }
 }
