@@ -323,8 +323,14 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
         engineRef.current?.fit();
       } else if (e.key === "f" || e.key === "F") {
         if (selectedRef.current.size) engineRef.current?.zoomToSelection(selectedRef.current);
+      } else if (e.key === "i" || e.key === "I") {
+        if (selectedRef.current.size) isolateIds([...selectedRef.current]);
+      } else if (e.key === "s" || e.key === "S") {
+        toggleSection();
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        if (measureRef.current?.hasSelection()) { e.preventDefault(); measureRef.current.deleteSelected(); }
       } else if (e.key === "0") {
-        engineRef.current?.fit(); // izometric
+        engineRef.current?.setViewDirection([1, 1, 1]); // izometric (corner view + frame)
       } else if (e.key === "1") {
         engineRef.current?.setPresetView("top");
       } else if (e.key === "2") {
@@ -384,6 +390,9 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
       const measure = measureRef.current;
       if (measure && measure.mode !== "none") return measure.onClick(ev);
       if (sectionRef.current) return;
+      // Outside measure mode, a click first tries to select an existing
+      // measurement; only if none is hit do we fall through to element picking.
+      if (measure && measure.selectAt(ev.clientX, ev.clientY)) { clearSelection(); return; }
       const engine = engineRef.current;
       if (!engine) return;
       const hit = await engine.pick(ev.clientX, ev.clientY);
@@ -650,29 +659,44 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
               ))}
             </div>
             <div className="vmenu-sep" />
-            <button className="vmenu-item danger" onClick={() => measureRef.current?.clearAll()}><span className="ic">🗑</span> Șterge măsurătorile</button>
+            <button className="vmenu-item" onClick={() => measureRef.current?.deleteSelected()}>
+              <span className="ic">🗑</span><span>Șterge măsurătoarea selectată</span><span className="vmenu-key">Del</span>
+            </button>
+            <button className="vmenu-item danger" onClick={() => measureRef.current?.clearAll()}><span className="ic">🗑</span><span>Șterge toate măsurătorile</span></button>
           </Dropdown>
 
           <span className="vsep" />
 
           <Dropdown label="Secțiune" icon="✂️" active={section}>
-            <button className={"vmenu-item" + (section ? " active" : "")} onClick={toggleSection}><span className="ic">✂️</span> Plan de secțiune</button>
+            <button className={"vmenu-item" + (section ? " active" : "")} onClick={toggleSection}>
+              <span className="ic">✂️</span><span>Plan de secțiune</span><span className="vmenu-key">S</span>
+            </button>
             <div className="vmenu-sep" />
-            <button className="vmenu-item danger" onClick={clearSections}><span className="ic">🗑</span> Șterge secțiunile</button>
+            <button className="vmenu-item danger" onClick={clearSections}><span className="ic">🗑</span><span>Șterge secțiunile</span></button>
           </Dropdown>
 
           <span className="vsep" />
 
           <Dropdown label="Vizibilitate" icon="👁">
-            <button className="vmenu-item" onClick={() => hideIds(selArr())}><span className="ic">🙈</span> Ascunde selecția</button>
-            <button className="vmenu-item" onClick={() => isolateIds(selArr())}><span className="ic">🎯</span> Izolează selecția</button>
-            <button className="vmenu-item" onClick={showAll}><span className="ic">👁</span> Afișează tot</button>
+            <button className="vmenu-item" onClick={() => hideIds(selArr())}>
+              <span className="ic">🙈</span><span>Ascunde selecția</span><span className="vmenu-key">H</span>
+            </button>
+            <button className="vmenu-item" onClick={() => isolateIds(selArr())}>
+              <span className="ic">🎯</span><span>Izolează selecția</span><span className="vmenu-key">I</span>
+            </button>
+            <button className="vmenu-item" onClick={() => { if (selectedRef.current.size) engineRef.current?.zoomToSelection(selectedRef.current); }}>
+              <span className="ic">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" /></svg>
+              </span><span>Încadrează selecția</span><span className="vmenu-key">F</span>
+            </button>
+            <div className="vmenu-sep" />
+            <button className="vmenu-item" onClick={showAll}><span className="ic">👁</span><span>Afișează tot</span></button>
           </Dropdown>
 
           <span className="vsep" />
 
           <Dropdown label="Vederi" icon="🎥">
-            <button className="vmenu-item" onClick={() => engineRef.current?.fit()}>
+            <button className="vmenu-item" onClick={() => engineRef.current?.setViewDirection([1, 1, 1])}>
               <span className="ic"><ViewIcon kind="iso" /></span><span>Izometric</span><span className="vmenu-key">0</span>
             </button>
             <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("top")}>

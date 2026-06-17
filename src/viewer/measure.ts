@@ -34,6 +34,7 @@ export class MeasureTool {
   private hover: V3 | null = null;
   private hoverType: SnapType = "face";
   private done: { mode: MeasureMode; pts: V3[] }[] = [];
+  private selected: number | null = null; // index into `done` of the picked measurement
   private svg: SVGSVGElement;
   private labels: HTMLDivElement;
   private raf = 0;
@@ -68,6 +69,47 @@ export class MeasureTool {
     this.mode = m;
     this.pending = [];
     this.hover = null;
+    this.selected = null;
+  }
+
+  /** Hit-test a screen point against finished measurements; selects the topmost
+   *  one hit (or clears the selection). Returns true if one was selected. */
+  selectAt(clientX: number, clientY: number): boolean {
+    const r = this.host.getBoundingClientRect();
+    const x = clientX - r.left, y = clientY - r.top;
+    const TH = 8; // px tolerance
+    for (let i = this.done.length - 1; i >= 0; i--) {
+      const m = this.done[i];
+      const scr = m.pts.map((p) => this.project(p)).filter(Boolean) as { x: number; y: number }[];
+      if (!scr.length) continue;
+      let hit = false;
+      if (m.mode === "point") {
+        hit = Math.hypot(scr[0].x - x, scr[0].y - y) <= TH;
+      } else {
+        const n = scr.length;
+        const segs = m.mode === "area" ? n : n - 1; // area is closed
+        for (let k = 0; k < segs; k++) {
+          if (distToSeg(x, y, scr[k], scr[(k + 1) % n]) <= TH) { hit = true; break; }
+        }
+        if (!hit && m.mode === "area" && pointInPoly(x, y, scr)) hit = true;
+      }
+      if (hit) { this.selected = i; return true; }
+    }
+    this.selected = null;
+    return false;
+  }
+
+  hasSelection(): boolean {
+    return this.selected != null;
+  }
+  clearSelection(): void {
+    this.selected = null;
+  }
+  /** Delete only the currently selected measurement. */
+  deleteSelected(): void {
+    if (this.selected == null) return;
+    this.done.splice(this.selected, 1);
+    this.selected = null;
   }
 
   private hit(ev: MouseEvent): V3 | null {
@@ -108,6 +150,7 @@ export class MeasureTool {
     this.done = [];
     this.pending = [];
     this.hover = null;
+    this.selected = null;
   }
 
   dispose(): void {
@@ -128,7 +171,8 @@ export class MeasureTool {
     while (this.svg.firstChild) this.svg.removeChild(this.svg.firstChild);
     this.labels.replaceChildren();
 
-    const drawn: { mode: MeasureMode; pts: V3[]; preview?: boolean }[] = [...this.done];
+    const drawn: { mode: MeasureMode; pts: V3[]; preview?: boolean; selected?: boolean }[] =
+      this.done.map((m, i) => ({ ...m, selected: i === this.selected }));
     if (this.pending.length) {
       const pts = this.hover ? [...this.pending, this.hover] : [...this.pending];
       drawn.push({ mode: this.mode, pts, preview: true });
@@ -138,15 +182,19 @@ export class MeasureTool {
 
     for (const m of drawn) {
       const scr = m.pts.map((p) => this.project(p));
+      // Selected measurement: teal + thicker, to stand out from the magenta ones.
+      const col = m.selected ? "#0aa6d6" : "#e6007e";
+      const sw = m.selected ? "3.5" : "2";
+      const dotR = m.selected ? "5" : "3.5";
       if (m.pts.length >= 2) {
         const pl = document.createElementNS(NS, "polyline");
         const closed = m.mode === "area" && !m.preview;
         const coords = scr.filter(Boolean) as { x: number; y: number }[];
         if (closed && coords.length >= 3) coords.push(coords[0]);
         pl.setAttribute("points", coords.map((c) => `${c.x},${c.y}`).join(" "));
-        pl.setAttribute("fill", m.mode === "area" && closed ? "rgba(230,0,126,0.12)" : "none");
-        pl.setAttribute("stroke", "#e6007e");
-        pl.setAttribute("stroke-width", "2");
+        pl.setAttribute("fill", m.mode === "area" && closed ? (m.selected ? "rgba(10,166,214,0.16)" : "rgba(230,0,126,0.12)") : "none");
+        pl.setAttribute("stroke", col);
+        pl.setAttribute("stroke-width", sw);
         this.svg.appendChild(pl);
       }
       for (const c of scr) {
@@ -154,9 +202,9 @@ export class MeasureTool {
         const dot = document.createElementNS(NS, "circle");
         dot.setAttribute("cx", String(c.x));
         dot.setAttribute("cy", String(c.y));
-        dot.setAttribute("r", "3.5");
+        dot.setAttribute("r", dotR);
         dot.setAttribute("fill", "#fff");
-        dot.setAttribute("stroke", "#e6007e");
+        dot.setAttribute("stroke", col);
         dot.setAttribute("stroke-width", "2");
         this.svg.appendChild(dot);
       }
@@ -241,6 +289,25 @@ export class MeasureTool {
       this.label(`Arie ${area.toFixed(2)} m²\nPerimetru ${per.toFixed(2)} m`, cx, cy);
     }
   }
+}
+
+/** Distance from screen point (px,py) to segment a–b. */
+function distToSeg(px: number, py: number, a: { x: number; y: number }, b: { x: number; y: number }): number {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 ? ((px - a.x) * dx + (py - a.y) * dy) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (a.x + dx * t), py - (a.y + dy * t));
+}
+
+/** Even-odd point-in-polygon test on screen coords. */
+function pointInPoly(px: number, py: number, poly: { x: number; y: number }[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y;
+    if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
 }
 
 /** 3D polygon area via the Newell cross-product sum (handles tilted plots). */

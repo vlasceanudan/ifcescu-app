@@ -32,7 +32,7 @@ export default function App() {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<"edit" | "view" | "globe">("edit");
+  const [tab, setTab] = useState<"edit" | "view" | "globe">("view");
   // Favorited property names for the 3D viewer's property panel. Owned here so a
   // new import resets them (they belong to the currently loaded model).
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
@@ -75,7 +75,7 @@ export default function App() {
         bytes,
         fileName: file.name,
       });
-      setTab("edit");
+      setTab("view");
     } catch (e: any) {
       setError("Nu am putut citi fișierul ca IFC valid. " + (e?.message ? `(${e.message})` : ""));
     } finally {
@@ -122,14 +122,14 @@ export default function App() {
 
         {loaded && (
           <nav className="tabs topbar-tabs">
-            <button className={"tab" + (tab === "edit" ? " active" : "")} onClick={() => setTab("edit")}>
-              📝 Editare date
-            </button>
             <button className={"tab" + (tab === "view" ? " active" : "")} onClick={() => setTab("view")}>
               🧊 Vizualizare 3D
             </button>
             <button className={"tab" + (tab === "globe" ? " active" : "")} onClick={() => setTab("globe")}>
               🌍 Glob 3D
+            </button>
+            <button className={"tab" + (tab === "edit" ? " active" : "")} onClick={() => setTab("edit")}>
+              📝 Editare date
             </button>
           </nav>
         )}
