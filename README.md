@@ -12,8 +12,10 @@ national projection **Stereo 70 (EPSG:3844)** and vertical datum **Marea Neagră
 
 Built with **Vite + React + TypeScript**, the buildingSMART colour palette
 (magenta primary, teal/blue accents) and a light/dark theme toggle. Full-screen
-app-shell layout: top bar, resizable IFC-structure tree on the left, viewer in the
-centre, resizable properties panel on the right.
+app-shell layout: top bar, a left panel (a **Modele** list for federation above a
+**Spatial / Class / Material** structure tree), the viewer in the centre with a
+docked **data-table (pivot)** below it and a **navigation cube** overlay, and a
+resizable properties panel on the right.
 
 > **`migrate-ifc-lite` branch.** This branch replaces the previous engine
 > (`web-ifc` + `web-ifc-viewer` + `three.js`) with **`@ifc-lite`** end-to-end:
@@ -51,10 +53,19 @@ centre, resizable properties panel on the right.
 ### 🧊 Vizualizare 3D (viewer — WebGPU)
 - **Streaming load**: geometry streams into the WebGPU scene as it tessellates, so the
   UI stays responsive (the heavy work runs off the main thread).
-- **IFC structure tree** (left, resizable): the spatial hierarchy with leaf elements
-  **grouped by IFC class** (e.g. `PILE (336)`), so a storey with hundreds of identical
-  elements reads as a short class list. Toggle **visibility** (eye) and **select**
-  straight from the tree. Built natively from the `@ifc-lite` store (IFC2X3/4/4X3).
+- **Federare modele** (Modele panel, top-left): load **multiple IFC models** into the
+  same scene with **Adaugă model**, toggle each one's visibility, or remove it. Models
+  share one coordinate space — the first (**primary ★**) sets the origin and the rest
+  are placed by their georeference offset, so each keeps its real position. The tree,
+  selection, properties and data table work **across all loaded models**; *Editare date*,
+  *Glob 3D*, IDS and BCF operate on the primary.
+- **IFC structure tree** (left, resizable) with **Spatial / Class / Material** tabs and
+  **one root per model**. Classes show their **verbatim IFC name in PascalCase**
+  (`IfcPile`, `IfcWallStandardCase` — no translation); higher levels are semi-bold and
+  leaf rows show just the element name. Elements are grouped (e.g. `IfcPile (336)`), so a
+  storey with hundreds of identical elements reads as a short class list. Toggle
+  **visibility** (eye) and **select** straight from the tree. Built natively from the
+  `@ifc-lite` store (IFC2X3/4/4X3).
 - **Selection**: click an element (in the viewer or tree) → a clean **lime silhouette
   outline** (feature edges; depth-independent, like the previous viewer).
 - **Properties** (right, resizable):
@@ -74,15 +85,25 @@ centre, resizable properties panel on the right.
   (edge midpoint), **Muchie** (nearest on edge), **Față** (surface); all on by default.
   A per-type glyph shows what's being snapped. The **point** tool reports IFC X/Y/Z and,
   when georeferenced, Stereo 70 **E/N/H**. Measuring **coexists with an active section**.
+- **Tabel de date (pivot)**: a docked, resizable table under the model that **groups**
+  elements by **Model / IFC class / Material / any property or quantity** (nested) and
+  **aggregates** value columns (sum / avg / count / min / max) with a totals row,
+  configured in a popup. Quantities are merged by name across the per-class `Qto_` sets,
+  so one quantity (e.g. `NetVolume`) aggregates across all classes/materials and **across
+  all federated models**. Clicking a row selects those elements in 3D; **export to CSV**.
 - **Secțiune**: arm the tool, then **double-click a face** → a clip plane aligned to
-  that face. The plane shows as a **fixed bounding-box-sized outline** (no fill, drawn
-  in 3D so it never morphs on zoom) with a **draggable scissor handle**; move it with
-  the handle or the position slider, and flip the kept side. (The WebGPU renderer
-  supports one clip plane at a time.)
+  that face, **anchored where you clicked** (it slides perpendicular from there). Shown
+  as a **small buildingSMART-magenta square** indicator with a **draggable scissor
+  handle**; move it with the handle (works from any zoom/angle) or the position slider,
+  resize the indicator with a **size slider**, and flip the kept side. (The WebGPU
+  renderer supports one clip plane at a time.)
 - **Vizibilitate**: hide / isolate / show-all.
-- **Vederi**: axonometric (fit), top, front, back, left, right, bottom.
-- **Keyboard shortcuts**: **`Z`** zoom-to selection, **`H`** toggle hide/restore the
-  selection, **`Esc`** cancels the active command.
+- **Vederi & cub de navigație**: a **ViewCube** overlay (top-right) that rotates with the
+  camera — click a face to snap to that view, or **drag it to orbit**. The **Vederi**
+  menu lists Isometric + the six orthographic views with icons and shortcut hints.
+- **Keyboard shortcuts**: **`0`** isometric, **`1`–`6`** top / bottom / front / back /
+  left / right, **`Z`** zoom-to selection, **`F`** frame selection, **`H`** toggle
+  hide/restore the selection, **`Esc`** cancels the active command.
 - Large georeferenced models are handled by `@ifc-lite`'s **RTC** (relative-to-centre)
   origin, so they render without float32 jitter; reported coordinates remain exact.
 
@@ -145,10 +166,15 @@ src/
     guid.ts             IFC GUID generator
   components/
     Header, UploadPanel, EditorForm, Viewer, IfcTree, PropsPanel, GlobeViewer
+    ModelsPanel         federation: loaded-models list (visibility / remove / add)
+    NavCube             navigation cube (click a face / drag to orbit)
+    DataTablePanel, DataTableConfig, Modal   docked pivot table + its config popup
   viewer/
-    engine.ts           WebGPU engine wrapper (@ifc-lite/renderer): load/pick/render,
-                        camera controls, selection outline, section, snapping
-    model.ts            spatial tree + property groups + file overview from the store
+    engine.ts           WebGPU engine wrapper (@ifc-lite/renderer): federated load
+                        (per-model id offsets), pick/render, camera controls + nav cube
+                        matrix, selection outline, section indicator, snapping
+    model.ts            per-model spatial/class/material trees + property groups + overview
+    pivot.ts            data-table model: field discovery, aggregation, CSV export
     measure.ts          measurement tool (length/point/area) + snap glyphs
   geo/                  globe placement: crs (proj4), geoid, extractGeometry,
                         placement (Stereo 70 → WGS84 + cotă), glb builder
