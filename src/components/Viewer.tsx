@@ -12,6 +12,7 @@ import { BcfPanel } from "./BcfPanel";
 import { IdsPanel } from "./IdsPanel";
 import { DataTablePanel } from "./DataTablePanel";
 import { ModelsPanel } from "./ModelsPanel";
+import { NavCube } from "./NavCube";
 import type { PivotConfig, PivotModel } from "../viewer/pivot";
 import type { IDSValidationReport } from "../ifc/ids";
 import { createBCFFromIDSReport, addTopicToProject, type BCFProject } from "../ifc/bcf";
@@ -87,6 +88,20 @@ function Dropdown({ label, icon, active, children }: { label: string; icon: stri
   );
 }
 
+/** Small inline icons for the preset-view menu (arrows + an iso cube). */
+function ViewIcon({ kind }: { kind: "iso" | "up" | "down" | "left" | "right" | "front" | "back" }) {
+  const a = { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  switch (kind) {
+    case "up": return <svg {...a}><path d="M12 19V5M6 11l6-6 6 6" /></svg>;
+    case "down": return <svg {...a}><path d="M12 5v14M6 13l6 6 6-6" /></svg>;
+    case "left": return <svg {...a}><path d="M19 12H5M11 6l-6 6 6 6" /></svg>;
+    case "right": return <svg {...a}><path d="M5 12h14M13 6l6 6-6 6" /></svg>;
+    case "front": return <svg {...a}><rect x="5" y="5" width="14" height="14" rx="1.5" fill="currentColor" stroke="none" /></svg>;
+    case "back": return <svg {...a}><rect x="5" y="5" width="14" height="14" rx="1.5" /></svg>;
+    case "iso": return <svg {...a}><path d="M12 2l8 4.6v9.2L12 22l-8-4.6V6.6z" /><path d="M12 11.3l8-4.6M12 11.3v10.4M12 11.3L4 6.7" /></svg>;
+  }
+}
+
 export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavorite, bcfProject, onBcfProject, idsReport, onIdsReport, models, onAddModel, onRemoveModel }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -123,6 +138,7 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
   const [section, setSection] = useState(false);
   const [secPos, setSecPos] = useState(50);
   const [secFlip, setSecFlip] = useState(false);
+  const [secSize, setSecSize] = useState(18); // section indicator size (% of half-diagonal)
   const [propGroups, setPropGroups] = useState<PropGroup[] | null>(null);
   const [propsKey, setPropsKey] = useState(0);
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
@@ -307,6 +323,20 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
         engineRef.current?.fit();
       } else if (e.key === "f" || e.key === "F") {
         if (selectedRef.current.size) engineRef.current?.zoomToSelection(selectedRef.current);
+      } else if (e.key === "0") {
+        engineRef.current?.fit(); // izometric
+      } else if (e.key === "1") {
+        engineRef.current?.setPresetView("top");
+      } else if (e.key === "2") {
+        engineRef.current?.setPresetView("bottom");
+      } else if (e.key === "3") {
+        engineRef.current?.setPresetView("front");
+      } else if (e.key === "4") {
+        engineRef.current?.setPresetView("back");
+      } else if (e.key === "5") {
+        engineRef.current?.setPresetView("left");
+      } else if (e.key === "6") {
+        engineRef.current?.setPresetView("right");
       }
     };
     window.addEventListener("keydown", onKey);
@@ -642,15 +672,31 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
           <span className="vsep" />
 
           <Dropdown label="Vederi" icon="🎥">
-            <button className="vmenu-item" onClick={() => engineRef.current?.fit()}><span className="ic">🧊</span> Axonometric</button>
-            <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("top")}><span className="ic">⬇️</span> De sus</button>
-            <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("front")}><span className="ic">⬛</span> Față</button>
-            <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("left")}><span className="ic">◀️</span> Stânga</button>
-            <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("back")}><span className="ic">⬜</span> Spate</button>
-            <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("right")}><span className="ic">▶️</span> Dreapta</button>
-            <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("bottom")}><span className="ic">⬆️</span> De jos</button>
+            <button className="vmenu-item" onClick={() => engineRef.current?.fit()}>
+              <span className="ic"><ViewIcon kind="iso" /></span><span>Izometric</span><span className="vmenu-key">0</span>
+            </button>
+            <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("top")}>
+              <span className="ic"><ViewIcon kind="up" /></span><span>Sus</span><span className="vmenu-key">1</span>
+            </button>
+            <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("bottom")}>
+              <span className="ic"><ViewIcon kind="down" /></span><span>Jos</span><span className="vmenu-key">2</span>
+            </button>
+            <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("front")}>
+              <span className="ic"><ViewIcon kind="front" /></span><span>Față</span><span className="vmenu-key">3</span>
+            </button>
+            <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("back")}>
+              <span className="ic"><ViewIcon kind="back" /></span><span>Spate</span><span className="vmenu-key">4</span>
+            </button>
+            <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("left")}>
+              <span className="ic"><ViewIcon kind="left" /></span><span>Stânga</span><span className="vmenu-key">5</span>
+            </button>
+            <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("right")}>
+              <span className="ic"><ViewIcon kind="right" /></span><span>Dreapta</span><span className="vmenu-key">6</span>
+            </button>
             <div className="vmenu-sep" />
-            <button className="vmenu-item" onClick={() => engineRef.current?.fit()}><span className="ic">⤢</span> Încadrează tot</button>
+            <button className="vmenu-item" onClick={() => engineRef.current?.fit()}>
+              <span className="ic">⤢</span><span>Încadrează tot</span><span className="vmenu-key">Z</span>
+            </button>
           </Dropdown>
 
           <span className="vsep" />
@@ -673,6 +719,13 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
 
         <div className="viewer-host" ref={hostRef} style={{ position: "relative" }}>
           <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
+          {ready && (
+            <NavCube
+              getTransform={() => engineRef.current?.cubeMatrix() ?? ""}
+              onFace={(v) => engineRef.current?.setPresetView(v)}
+              onOrbit={(dx, dy) => engineRef.current?.orbit(dx, dy)}
+            />
+          )}
           {section && (
             <div className="section-ctl" style={sectionCtlStyle}>
               <span style={{ fontSize: 12, opacity: 0.85 }}>Dublu-click pe o față pentru a crea secțiunea</span>
@@ -681,9 +734,17 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
                 <input
                   type="range" min={0} max={100} value={secPos}
                   onChange={(e) => { const v = Number(e.target.value); setSecPos(v); engineRef.current?.sectionSetPos(v); }}
-                  style={{ width: 160 }}
+                  style={{ width: 140 }}
                 />
                 <span style={{ fontSize: 12, width: 32 }}>{secPos}%</span>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 12 }}>Dimensiune</span>
+                <input
+                  type="range" min={2} max={100} value={secSize}
+                  onChange={(e) => { const v = Number(e.target.value); setSecSize(v); engineRef.current?.setSectionSize(v / 100); }}
+                  style={{ width: 120 }}
+                />
               </label>
               <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
                 <input

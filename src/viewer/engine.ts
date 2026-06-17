@@ -73,8 +73,11 @@ export class ViewerEngine {
   private selEdges: Float32Array | null = null;
   private outlineSvg: SVGSVGElement | null = null;
   private outlinePath: SVGPathElement | null = null;
+  private sectionPath: SVGPathElement | null = null; // small colored section-plane indicator
   private sectionHandle: HTMLDivElement | null = null;
   private secCenterWorld: [number, number, number] | null = null;
+  private secQuad: [number, number, number][] | null = null; // 4 corners of the indicator
+  private secSizePct = 0.18; // indicator half-size as a fraction of the model half-diagonal
   private handleDrag: { lastX: number; lastY: number } | null = null;
   /** Notified when the in-viewer handle drags the section, so the UI slider stays in sync. */
   onSectionMove: ((pos: number) => void) | null = null;
@@ -109,6 +112,15 @@ export class ViewerEngine {
     if (!parent) return;
     const svg = document.createElementNS(SVG_NS, "svg");
     Object.assign(svg.style, { position: "absolute", inset: "0", width: "100%", height: "100%", pointerEvents: "none", zIndex: "4" });
+    // Section-plane indicator (filled square, buildingSMART magenta) — added
+    // first so the selection outline draws on top of it.
+    const sec = document.createElementNS(SVG_NS, "path");
+    sec.setAttribute("fill", "rgba(230, 0, 126, 0.16)");
+    sec.setAttribute("stroke", "rgb(230, 0, 126)");
+    sec.setAttribute("stroke-width", "2");
+    sec.setAttribute("stroke-linejoin", "round");
+    svg.appendChild(sec);
+    this.sectionPath = sec;
     const path = document.createElementNS(SVG_NS, "path");
     path.setAttribute("fill", "none");
     path.setAttribute("stroke", OUTLINE_COLOR);
@@ -139,15 +151,26 @@ export class ViewerEngine {
       const c = this.secCenterWorld;
       const { normal: n, dMin, dMax } = this.sec;
       const range = dMax - dMin || 1;
+      // Probe the screen-space direction of the normal with a SMALL world step
+      // tied to the camera distance — so the probe point stays in front of the
+      // camera (never behind / off-screen) at any zoom or angle. (Using the full
+      // range here put the probe behind the camera when zoomed in → drag froze.)
+      const cp = cam.getPosition();
+      const eps = (Math.hypot(cp.x - c[0], cp.y - c[1], cp.z - c[2]) || 1) * 0.05;
       const A = cam.projectToScreen({ x: c[0], y: c[1], z: c[2] }, w, h);
-      const B = cam.projectToScreen({ x: c[0] + n[0] * range, y: c[1] + n[1] * range, z: c[2] + n[2] * range }, w, h);
+      const B = cam.projectToScreen({ x: c[0] + n[0] * eps, y: c[1] + n[1] * eps, z: c[2] + n[2] * eps }, w, h);
       if (A && B) {
         const vx = B.x - A.x, vy = B.y - A.y;
-        const len2 = vx * vx + vy * vy || 1;
-        const dPos = (((e.clientX - this.handleDrag.lastX) * vx + (e.clientY - this.handleDrag.lastY) * vy) / len2) * 100;
-        this.sec.pos = Math.max(0, Math.min(100, this.sec.pos + dPos));
-        this.applySection();
-        this.onSectionMove?.(Math.round(this.sec.pos));
+        const len = Math.hypot(vx, vy);
+        if (len > 0.5) { // skip when looking almost along the normal (degenerate)
+          const ux = vx / len, uy = vy / len;
+          const pxAlong = (e.clientX - this.handleDrag.lastX) * ux + (e.clientY - this.handleDrag.lastY) * uy;
+          const worldDelta = (pxAlong / len) * eps; // screen px → world units along the normal
+          const dPos = (worldDelta / range) * 100;
+          this.sec.pos = Math.max(0, Math.min(100, this.sec.pos + dPos));
+          this.applySection();
+          this.onSectionMove?.(Math.round(this.sec.pos));
+        }
       }
       this.handleDrag.lastX = e.clientX;
       this.handleDrag.lastY = e.clientY;
@@ -364,25 +387,50 @@ export class ViewerEngine {
     const mb = this.modelBounds();
     if (!this.sec || !this.sec.enabled || !mb) {
       this.secCenterWorld = null;
-      this.renderer.clearAnnotationLines3D();
+      this.secQuad = null;
       return;
     }
-    const { normal: n, dMin, dMax, pos } = this.sec;
+    const { normal: n, dMin, dMax, pos, anchor } = this.sec;
     const distance = dMin + (pos / 100) * (dMax - dMin);
-    const ctr = [(mb.min[0] + mb.max[0]) / 2, (mb.min[1] + mb.max[1]) / 2, (mb.min[2] + mb.max[2]) / 2];
-    const ndotc = n[0] * ctr[0] + n[1] * ctr[1] + n[2] * ctr[2];
-    const c: [number, number, number] = [ctr[0] + n[0] * (distance - ndotc), ctr[1] + n[1] * (distance - ndotc), ctr[2] + n[2] * (distance - ndotc)];
+    // Anchor the widget at the double-click point (projected onto the current
+    // plane), so it sits where the user clicked and slides perpendicular as the
+    // plane moves — instead of snapping to the bounding-box centre.
+    const ndotc = n[0] * anchor[0] + n[1] * anchor[1] + n[2] * anchor[2];
+    const c: [number, number, number] = [anchor[0] + n[0] * (distance - ndotc), anchor[1] + n[1] * (distance - ndotc), anchor[2] + n[2] * (distance - ndotc)];
     this.secCenterWorld = c;
     const { tangent: tg, bitangent: bt } = planeBasis(n);
-    // Fixed half-size = half the model diagonal → spans the whole loaded bbox, constant.
-    const s = 0.5 * Math.hypot(mb.max[0] - mb.min[0], mb.max[1] - mb.min[1], mb.max[2] - mb.min[2]);
+    // Small indicator: half-size = secSizePct of the model's half-diagonal (slider).
+    const s = this.secSizePct * 0.5 * Math.hypot(mb.max[0] - mb.min[0], mb.max[1] - mb.min[1], mb.max[2] - mb.min[2]);
     const corner = (su: number, sv: number): [number, number, number] =>
       [c[0] + tg[0] * su + bt[0] * sv, c[1] + tg[1] * su + bt[1] * sv, c[2] + tg[2] * su + bt[2] * sv];
-    const q = [corner(s, s), corner(s, -s), corner(-s, -s), corner(-s, s)];
-    const segs = [q[0], q[1], q[1], q[2], q[2], q[3], q[3], q[0]]; // 4 edges as a line-list
-    const arr = new Float32Array(segs.length * 3);
-    for (let i = 0; i < segs.length; i++) { arr[i * 3] = segs[i][0]; arr[i * 3 + 1] = segs[i][1]; arr[i * 3 + 2] = segs[i][2]; }
-    this.renderer.uploadAnnotationLines3D(arr);
+    this.secQuad = [corner(s, s), corner(s, -s), corner(-s, -s), corner(-s, s)];
+  }
+
+  /** Set the section indicator size (fraction 0..1 of the model half-diagonal). */
+  setSectionSize(pct: number): void {
+    this.secSizePct = Math.max(0.02, Math.min(1, pct));
+    this.uploadSectionPlane();
+    this.renderer.requestRender();
+  }
+  getSectionSize(): number {
+    return this.secSizePct;
+  }
+
+  /** Draw the section indicator as a filled magenta quad (projected each frame). */
+  private drawSectionQuad(): void {
+    const path = this.sectionPath;
+    if (!path) return;
+    const q = this.secQuad;
+    if (!q) { path.setAttribute("d", ""); return; }
+    const cam = this.renderer.getCamera();
+    const w = this.canvas.clientWidth || 1, h = this.canvas.clientHeight || 1;
+    let d = "";
+    for (let i = 0; i < q.length; i++) {
+      const p = cam.projectToScreen({ x: q[i][0], y: q[i][1], z: q[i][2] }, w, h);
+      if (!p) { path.setAttribute("d", ""); return; } // a corner behind camera → hide
+      d += `${i === 0 ? "M" : "L"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
+    }
+    path.setAttribute("d", d + "Z");
   }
 
   /** Position the scissor handle at the projected plane centre (per-frame). */
@@ -446,6 +494,7 @@ export class ViewerEngine {
         sectionPlane: this.state.sectionPlane ?? undefined,
       });
       this.drawOutline();
+      this.drawSectionQuad();
       this.drawSectionHandle();
     }
     this.raf = requestAnimationFrame(this.loop);
@@ -592,7 +641,9 @@ export class ViewerEngine {
   }
 
   // --- section (arbitrary plane aligned to a picked face) -----------------
-  private sec: { normal: [number, number, number]; dMin: number; dMax: number; pos: number; flipped: boolean; enabled: boolean } | null = null;
+  // `anchor` = the world point where the section was created (double-click hit),
+  // so the widget sits there and slides perpendicular, not at the bbox centre.
+  private sec: { normal: [number, number, number]; dMin: number; dMax: number; pos: number; flipped: boolean; enabled: boolean; anchor: [number, number, number] } | null = null;
 
   /** Re-apply the section state to the renderer (clip via normal + distance). */
   private applySection(): void {
@@ -625,7 +676,7 @@ export class ViewerEngine {
     }
     const dHit = n[0] * point[0] + n[1] * point[1] + n[2] * point[2];
     const pos = dMax > dMin ? Math.max(0, Math.min(100, ((dHit - dMin) / (dMax - dMin)) * 100)) : 50;
-    this.sec = { normal: n, dMin, dMax, pos, flipped: false, enabled: true };
+    this.sec = { normal: n, dMin, dMax, pos, flipped: false, enabled: true, anchor: point };
     this.applySection();
     return Math.round(pos);
   }
@@ -680,10 +731,57 @@ export class ViewerEngine {
     this.renderer.requestRender();
   }
 
+  /** Orbit the camera by raw pixel deltas (used by the nav-cube drag). */
+  orbit(dx: number, dy: number): void {
+    this.renderer.getCamera().orbit(dx * ORBIT_SENS, dy * ORBIT_SENS, false);
+    this.renderer.requestRender();
+  }
+
   setPresetView(view: "top" | "bottom" | "front" | "back" | "left" | "right"): void {
     const mb = this.renderer.getModelBounds();
     this.renderer.getCamera().setPresetView(view, mb ?? undefined);
     this.renderer.requestRender();
+  }
+
+  /** Look at the model centre from an arbitrary render-space direction (used by
+   *  the nav-cube edges/corners for oblique/isometric views). */
+  setViewDirection(dir: [number, number, number]): void {
+    const mb = this.modelBounds();
+    if (!mb) return;
+    const c: [number, number, number] = [(mb.min[0] + mb.max[0]) / 2, (mb.min[1] + mb.max[1]) / 2, (mb.min[2] + mb.max[2]) / 2];
+    const radius = 0.5 * Math.hypot(mb.max[0] - mb.min[0], mb.max[1] - mb.min[1], mb.max[2] - mb.min[2]) || 1;
+    const len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+    const d: [number, number, number] = [dir[0] / len, dir[1] / len, dir[2] / len];
+    const dist = radius * 2.5;
+    const cam = this.renderer.getCamera();
+    cam.setPosition(c[0] + d[0] * dist, c[1] + d[1] * dist, c[2] + d[2] * dist);
+    cam.setTarget(c[0], c[1], c[2]);
+    // Up is world-up unless looking near-vertically (then pick a horizontal up).
+    if (Math.abs(d[1]) > 0.99) cam.setUp(0, 0, -1);
+    else cam.setUp(0, 1, 0);
+    this.renderer.requestRender();
+  }
+
+  /** CSS matrix3d (rotation only) mirroring the camera orientation, for the
+   *  nav-cube. world→view rotation with CSS Y-down flip on the up/forward rows. */
+  cubeMatrix(): string {
+    const cam = this.renderer.getCamera();
+    const p = cam.getPosition(), t = cam.getTarget(), u = cam.getUp();
+    const nrm = (v: number[]) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+    const cross = (a: number[], b: number[]) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const f = nrm([t.x - p.x, t.y - p.y, t.z - p.z]);
+    const r = nrm(cross(f, [u.x, u.y, u.z]));
+    const tu = cross(r, f); // true up (orthonormal)
+    // world→view rotation R has rows [r, tu, -f]. CSS is Y-down, so the cube
+    // transform is the PROPER rotation F·R·F (F = diag(1,-1,1)) — i.e. negate the
+    // middle column. Using F·R alone is a reflection and mirrors the labels.
+    const m = [
+      r[0], -tu[0], -f[0], 0,
+      -r[1], tu[1], f[1], 0,
+      r[2], -tu[2], -f[2], 0,
+      0, 0, 0, 1,
+    ];
+    return `matrix3d(${m.map((n) => (Math.abs(n) < 1e-6 ? 0 : Number(n.toFixed(6)))).join(",")})`;
   }
 
   resize(): void {

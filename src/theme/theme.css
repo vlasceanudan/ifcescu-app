@@ -464,10 +464,86 @@ table.summary td.k {
   width: 18px;
   text-align: center;
 }
+/* Right-aligned keyboard-shortcut chip in menu items */
+.vmenu-key {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 1px 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  text-align: center;
+}
+.vmenu-item:hover .vmenu-key {
+  color: var(--text);
+}
 .vmenu-sep {
   height: 1px;
   background: var(--border);
   margin: 6px 4px;
+}
+
+/* Navigation cube (ViewCube) — top-right overlay of the 3D viewer */
+/* Wrap is larger than the cube so its corners never clip while rotating. */
+.navcube-wrap {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 124px;
+  height: 124px;
+  z-index: 8;
+  perspective: 560px;
+  pointer-events: none; /* gaps pass clicks through to the canvas */
+}
+.navcube {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 62px;
+  height: 62px;
+  margin: -31px 0 0 -31px; /* center the cube in the wrap */
+  transform-style: preserve-3d;
+  /* transform is set per-frame from the camera (engine.cubeMatrix) */
+}
+.navcube-face {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f3f4f7;
+  border: 1px solid rgba(120, 120, 130, 0.6);
+  box-sizing: border-box;
+  pointer-events: auto;
+  cursor: pointer;
+  /* Only the faces pointing toward the viewer render → a clean solid cube. */
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.navcube-face:hover {
+  background: rgba(230, 0, 126, 0.18);
+}
+.navcube-label {
+  pointer-events: none;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #2a2a30;
+  text-transform: uppercase;
+  user-select: none;
+}
+:root[data-theme="dark"] .navcube-face {
+  background: #2a2c34;
+  border-color: rgba(180, 184, 200, 0.45);
+}
+:root[data-theme="dark"] .navcube-face:hover {
+  background: rgba(230, 0, 126, 0.35);
+}
+:root[data-theme="dark"] .navcube-label {
+  color: #e6e8ef;
 }
 
 /* Viewer layout: IFC tree + main viewer */
