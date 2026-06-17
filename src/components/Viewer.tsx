@@ -4,7 +4,7 @@ import type { Theme } from "../hooks/useTheme";
 import type { GeorefInfo } from "../ifc/editor";
 import { detectSchema } from "../ifc/store";
 import { ViewerEngine } from "../viewer/engine";
-import { buildTree, getSelectionProps, gatherFileInfo } from "../viewer/model";
+import { buildTree, buildClassTree, buildMaterialTree, getSelectionProps, gatherFileInfo } from "../viewer/model";
 import { MeasureTool, type MeasureMode } from "../viewer/measure";
 import { IfcTree, type TreeNode } from "./IfcTree";
 import { PropAccordion, FileInfoPanel, type PropGroup, type FileInfo } from "./PropsPanel";
@@ -105,13 +105,25 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
   const [propsWidth, setPropsWidth] = useState(340);
   const [treeWidth, setTreeWidth] = useState(300);
   const [tree, setTree] = useState<TreeNode | null>(null);
+  const [classRoots, setClassRoots] = useState<TreeNode[] | null>(null);
+  const [materialRoots, setMaterialRoots] = useState<TreeNode[] | null>(null);
+  // Active left-panel view: spatial hierarchy, grouped by IFC class, or by material.
+  const [treeView, setTreeView] = useState<"spatial" | "class" | "material">("spatial");
   const [visibleIds, setVisibleIds] = useState<Set<number>>(new Set());
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [ready, setReady] = useState(false);
   // The right dock hosts EITHER the IDS panel or the BCF panel (toolbar toggles).
   const [dock, setDock] = useState<"none" | "ids" | "bcf">("none");
 
-  const displayTree = useMemo(() => (tree ? groupByClass(tree, { n: 0 }) : tree), [tree]);
+  // Spatial view keeps the per-container class subgrouping; Class/Material views
+  // are flat groupings built once at load. Only the active tree is rendered.
+  const spatialTree = useMemo(() => (tree ? groupByClass(tree, { n: 0 }) : tree), [tree]);
+  // Active forest: Spatial wraps the single project node in an array; Class/Material
+  // are already forests of group nodes (no project wrapper).
+  const activeRoots =
+    treeView === "class" ? classRoots
+      : treeView === "material" ? materialRoots
+        : spatialTree ? [spatialTree] : null;
 
   useEffect(() => {
     if (!hasWebGPU) return;
@@ -149,7 +161,10 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
         engine.onSectionMove = (pos) => setSecPos(pos); // keep the slider in sync with the drag handle
         wireEvents(host);
 
-        setTree(buildTree(store, new Set(allIDs)));
+        const idset = new Set(allIDs);
+        setTree(buildTree(store, idset));
+        setClassRoots(buildClassTree(store, idset));
+        setMaterialRoots(buildMaterialTree(store, idset));
         // Model centroid in IFC absolute coords (handles real-coordinate models
         // whose IfcMapConversion has a zero Eastings/Northings offset).
         const mb = engine.modelBounds();
@@ -396,7 +411,11 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
 
   const startPropsResize = (e: ReactMouseEvent) => {
     e.preventDefault();
-    const onMove = (ev: MouseEvent) => setPropsWidth(Math.min(640, Math.max(260, window.innerWidth - ev.clientX - 16)));
+    // Width is measured from the panel's right edge (which stays fixed as the
+    // panel grows leftward), NOT the window edge — otherwise an open IDS/BCF
+    // dock sitting to the right throws the math off by its width.
+    const right = (e.currentTarget as HTMLElement).parentElement!.getBoundingClientRect().right;
+    const onMove = (ev: MouseEvent) => setPropsWidth(Math.min(640, Math.max(260, right - ev.clientX)));
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
@@ -433,10 +452,15 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
   return (
     <div className="viewer-wrap">
       <aside className="ifctree-panel" style={{ width: treeWidth }}>
-        <div className="ifctree-head">Structură IFC</div>
-        {displayTree ? (
+        <div className="tree-tabs">
+          <button className={"tree-tab" + (treeView === "spatial" ? " active" : "")} onClick={() => setTreeView("spatial")}>Spațial</button>
+          <button className={"tree-tab" + (treeView === "class" ? " active" : "")} onClick={() => setTreeView("class")}>Clase</button>
+          <button className={"tree-tab" + (treeView === "material" ? " active" : "")} onClick={() => setTreeView("material")}>Materiale</button>
+        </div>
+        {activeRoots ? (
           <IfcTree
-            root={displayTree}
+            key={treeView}
+            roots={activeRoots}
             visibleIds={visibleIds}
             selectedIds={selectedIds}
             onSelect={(ids, expressID) => selectIds(ids, expressID)}

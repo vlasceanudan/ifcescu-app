@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { IFC_ENTITY_NAMES } from "@ifc-lite/data";
 
 export interface TreeNode {
   expressID: number;
@@ -10,34 +11,34 @@ export interface TreeNode {
   defaultOpen?: boolean; // overrides the depth-based default expansion
 }
 
-const TYPE_RO: Record<string, string> = {
-  IFCPROJECT: "Proiect",
-  IFCSITE: "Sit",
-  IFCBUILDING: "Clădire",
-  IFCBUILDINGSTOREY: "Nivel",
-  IFCSPACE: "Spațiu",
-  IFCBUILDINGELEMENTPROXY: "Element",
-};
-
+// Canonical IFC class name in PascalCase ("IFCWALL" → "IfcWall"). The
+// IFC_ENTITY_NAMES map (IFC4X3 schema) is the only source that recovers word
+// boundaries for multi-word classes (IFCWALLSTANDARDCASE → IfcWallStandardCase).
+// No Romanian translations — classes are shown exactly as their IFC type.
 function friendly(type: string): string {
-  return (
-    TYPE_RO[type] ??
-    type.replace(/^IFC/, "").replace(/([a-z])([A-Z])/g, "$1 $2")
-  );
+  if (!type) return "";
+  const hit = IFC_ENTITY_NAMES[type.toUpperCase()];
+  if (hit) return hit;
+  const rest = type.replace(/^IFC/i, "");
+  return "Ifc" + rest.charAt(0).toUpperCase() + rest.slice(1).toLowerCase();
 }
 
 interface Props {
-  root: TreeNode;
+  /** Top-level nodes. Spatial view passes a single project node; Class/Material
+   * views pass the group nodes directly (no IfcProject wrapper). */
+  roots: TreeNode[];
   visibleIds: Set<number>;
   selectedIds: Set<number>;
   onSelect: (ids: number[], expressID: number) => void;
   onToggleVisible: (ids: number[], visible: boolean) => void;
 }
 
-export function IfcTree({ root, visibleIds, selectedIds, onSelect, onToggleVisible }: Props) {
+export function IfcTree({ roots, visibleIds, selectedIds, onSelect, onToggleVisible }: Props) {
   return (
     <div className="ifctree">
-      <Node node={root} depth={0} {...{ visibleIds, selectedIds, onSelect, onToggleVisible }} />
+      {roots.map((node) => (
+        <Node key={node.expressID} node={node} depth={0} {...{ visibleIds, selectedIds, onSelect, onToggleVisible }} />
+      ))}
     </div>
   );
 }
@@ -49,18 +50,26 @@ function Node({
   selectedIds,
   onSelect,
   onToggleVisible,
-}: { node: TreeNode; depth: number } & Omit<Props, "root">) {
+}: { node: TreeNode; depth: number } & Omit<Props, "roots">) {
   const [open, setOpen] = useState(node.defaultOpen ?? depth < 2);
   const hasChildren = node.children.length > 0;
 
   const anyVisible = node.ids.some((id) => visibleIds.has(id));
   const selected = selectedIds.has(node.expressID);
+  // Label rules:
+  // - group rows (count != null): own name ("Concrete") or class ("IfcWall"), + count
+  // - leaf rows (no children = last hierarchy level): NAME ONLY (no class prefix),
+  //   falling back to "IfcWall #1234" only when the element is unnamed
+  // - branch containers (have children): "IfcSite: SP4" so the class stays visible
+  const groupLabel = node.name ? node.name : friendly(node.type);
   const label =
     node.count != null
-      ? `${friendly(node.type)} (${node.count})`
-      : node.name
-        ? `${friendly(node.type)}: ${node.name}`
-        : `${friendly(node.type)} #${node.expressID}`;
+      ? `${groupLabel} (${node.count})`
+      : !hasChildren
+        ? node.name || `${friendly(node.type)} #${node.expressID}`
+        : node.name
+          ? `${friendly(node.type)}: ${node.name}`
+          : `${friendly(node.type)} #${node.expressID}`;
 
   return (
     <div className="tnode">
@@ -87,7 +96,7 @@ function Node({
           {anyVisible ? "👁" : "🚫"}
         </span>
         <span
-          className="tlabel"
+          className={"tlabel" + (hasChildren ? " tbranch" : "")}
           title={label}
           onClick={() => node.ids.length && onSelect(node.ids, node.expressID)}
         >

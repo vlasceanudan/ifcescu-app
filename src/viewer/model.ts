@@ -6,6 +6,7 @@ import {
   extractRootAttributesFromEntity,
   extractPropertiesOnDemand,
   extractQuantitiesOnDemand,
+  buildMaterialUsageIndex,
   type IfcDataStore,
 } from "@ifc-lite/parser";
 import type { TreeNode } from "../components/IfcTree";
@@ -71,6 +72,81 @@ export function buildTree(store: IfcDataStore, allIDs: Set<number>): TreeNode | 
     };
   };
   return walk(root);
+}
+
+/**
+ * Build a tree grouped purely by IFC class (flat, not nested in spatial
+ * containers): top level = one group per class ("IfcWall (243)") whose children
+ * are the individual elements. Group rows carry the raw uppercase type so the
+ * IfcTree formatter renders the PascalCase label; only renderable geometry is
+ * included (intersection with `allIDs`). Returned as a forest of class groups —
+ * no IfcProject wrapper (the Class view shows classes only).
+ */
+export function buildClassTree(store: IfcDataStore, allIDs: Set<number>): TreeNode[] {
+  const groups: TreeNode[] = [];
+  for (const [type, idsAll] of store.entityIndex.byType) {
+    const items: TreeNode[] = [];
+    const ids: number[] = [];
+    for (const id of idsAll) {
+      if (!allIDs.has(id)) continue; // renderable geometry only
+      items.push({ expressID: id, type, name: entityName(store, id), ids: [id], children: [] });
+      ids.push(id);
+    }
+    if (!items.length) continue;
+    items.sort((a, b) => a.expressID - b.expressID);
+    // expressID is patched below to a unique synthetic id for the group row.
+    groups.push({ expressID: 0, type, name: "", ids, children: items, count: items.length, defaultOpen: false });
+  }
+  groups.sort((a, b) => a.type.localeCompare(b.type));
+  let synthetic = -1;
+  for (const g of groups) g.expressID = synthetic--;
+  return groups;
+}
+
+/**
+ * Build a tree grouped by material (IfcRelAssociatesMaterial, resolved per
+ * element occurrence or via its type): top level = one group per material
+ * ("Concrete (120)") whose children are the elements using it. Elements with no
+ * material fall into a trailing "Fără material" bucket (UI chrome stays Romanian,
+ * consistent with the rest of the app; only IFC class names are de-translated).
+ * Returned as a forest of material groups — no IfcProject wrapper.
+ */
+export function buildMaterialTree(store: IfcDataStore, allIDs: Set<number>): TreeNode[] {
+  const usage = buildMaterialUsageIndex(store);
+  const groups: TreeNode[] = [];
+  const used = new Set<number>();
+  let synthetic = -1;
+  for (const mu of usage.values()) {
+    const items: TreeNode[] = [];
+    const ids: number[] = [];
+    const seen = new Set<number>();
+    for (const e of mu.entries) {
+      const id = e.entityId;
+      if (!allIDs.has(id) || seen.has(id)) continue; // renderable + dedupe multi-layer
+      seen.add(id);
+      used.add(id);
+      items.push({ expressID: id, type: entityType(store, id), name: entityName(store, id), ids: [id], children: [] });
+      ids.push(id);
+    }
+    if (!items.length) continue;
+    items.sort((a, b) => a.type.localeCompare(b.type) || a.expressID - b.expressID);
+    groups.push({ expressID: synthetic--, type: "IFCMATERIAL", name: mu.name || "(material fără nume)", ids, children: items, count: items.length, defaultOpen: false });
+  }
+  groups.sort((a, b) => a.name.localeCompare(b.name));
+
+  // Renderable elements not covered by any material → trailing bucket.
+  const noMat: TreeNode[] = [];
+  const noIds: number[] = [];
+  for (const id of allIDs) {
+    if (used.has(id)) continue;
+    noMat.push({ expressID: id, type: entityType(store, id), name: entityName(store, id), ids: [id], children: [] });
+    noIds.push(id);
+  }
+  if (noMat.length) {
+    noMat.sort((a, b) => a.type.localeCompare(b.type) || a.expressID - b.expressID);
+    groups.push({ expressID: synthetic--, type: "IFCMATERIAL", name: "Fără material", ids: noIds, children: noMat, count: noMat.length, defaultOpen: false });
+  }
+  return groups;
 }
 
 /** "IFCCOLUMN" → "IfcColumn". */

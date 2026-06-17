@@ -514,10 +514,30 @@ table.summary td.k {
   background: var(--bs-magenta);
   opacity: 0.3;
 }
-.ifctree-head {
-  padding: 10px 12px;
-  font-weight: 700;
+/* Segmented view switcher (Spatial / Class / Material) at the top of the tree panel */
+.tree-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
   border-bottom: 1px solid var(--border);
+}
+.tree-tab {
+  flex: 1;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.tree-tab:hover {
+  background: var(--surface-2);
+}
+.tree-tab.active {
+  background: rgba(230, 0, 126, 0.12);
+  color: var(--bs-magenta);
 }
 .ifctree {
   flex: 1;
@@ -564,6 +584,10 @@ table.summary td.k {
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
+}
+/* Branch rows (any level with children) stand out; leaf rows stay normal weight. */
+.tlabel.tbranch {
+  font-weight: 600;
 }
 
 /* Viewer */
