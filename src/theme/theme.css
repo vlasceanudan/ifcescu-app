@@ -986,3 +986,397 @@ table.summary td.k {
   border-top: 1px solid var(--border);
   padding-top: 7px;
 }
+
+/* ---- IDS validation panel (Verificare / Colaborare) -------------------- */
+.ids-intro {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin: 0 0 12px;
+}
+.ids-filechip {
+  margin-left: 10px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.ids-progress {
+  position: relative;
+  height: 22px;
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.ids-progress-bar {
+  height: 100%;
+  background: var(--bs-teal);
+  transition: width 0.15s linear;
+}
+.ids-progress-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.74rem;
+  color: var(--text);
+}
+.ids-summary {
+  display: flex;
+  gap: 10px;
+  margin: 16px 0 12px;
+}
+.ids-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.ids-stat-num {
+  font-size: 1.25rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.ids-fail-num {
+  color: #e5484d;
+}
+.ids-stat-lbl {
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-align: center;
+}
+.ids-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 1px 9px;
+  white-space: nowrap;
+}
+.ids-pass {
+  background: rgba(48, 164, 108, 0.16);
+  color: #2f9e6b;
+}
+.ids-fail {
+  background: rgba(229, 72, 77, 0.16);
+  color: #e5484d;
+}
+.ids-not_applicable {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.ids-specs {
+  margin-top: 8px;
+}
+.ids-spec-body {
+  padding: 4px 8px 10px;
+}
+.ids-spec-desc {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.ids-spec-ok {
+  font-size: 0.8rem;
+  color: #2f9e6b;
+}
+.ids-entities,
+.ids-reqs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ids-entity {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  margin-bottom: 6px;
+  overflow: hidden;
+}
+.ids-entity-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: var(--surface);
+  border: none;
+  cursor: pointer;
+  padding: 7px 9px;
+  color: var(--text);
+  text-align: left;
+  font-size: 0.82rem;
+}
+.ids-entity-head:hover {
+  background: var(--surface-2);
+}
+.ids-entity-type {
+  font-weight: 700;
+}
+.ids-entity-name {
+  color: var(--text);
+}
+.ids-entity-guid {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-family: monospace;
+}
+.ids-entity-go {
+  margin-left: auto;
+  color: var(--bs-magenta);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+.ids-reqs {
+  padding: 4px 9px 8px;
+}
+.ids-req {
+  padding: 5px 0;
+  border-top: 1px dashed var(--border);
+}
+.ids-req-desc {
+  font-size: 0.78rem;
+}
+.ids-req-reason {
+  font-size: 0.76rem;
+  color: #e5484d;
+  margin-top: 2px;
+}
+
+/* ---- In-viewer BCF drawer ---------------------------------------------- */
+.bcf-drawer {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 290px;
+  max-height: calc(100% - 24px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.28);
+  z-index: 6;
+  overflow: hidden;
+}
+.bcf-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  font-weight: 600;
+  font-size: 0.86rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.bcf-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.bcf-drawer-body {
+  padding: 12px;
+  overflow-y: auto;
+}
+.bcf-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bcf-label {
+  font-size: 0.74rem;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.bcf-form input,
+.bcf-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-family: inherit;
+  resize: vertical;
+}
+.bcf-form .btn {
+  margin-top: 8px;
+}
+.bcf-hint {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 6px;
+}
+.bcf-note {
+  font-size: 0.74rem;
+  color: var(--bs-teal);
+  margin-top: 4px;
+}
+.bcf-topics {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.bcf-topics-head {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.bcf-empty {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.bcf-topics ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.bcf-topic {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px dashed var(--border);
+}
+.bcf-topic:first-child {
+  border-top: none;
+}
+.bcf-topic-info {
+  flex: 1;
+  min-width: 0;
+}
+.bcf-topic-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bcf-topic-meta {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.bcf-open {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  color: var(--bs-magenta);
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.bcf-open:hover {
+  background: var(--surface-2);
+}
+
+.bcf-tab-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ---- Docked IDS panel (inside the 3D viewer) --------------------------- */
+.ids-panel {
+  width: 360px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+}
+.ids-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.ids-head-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.ids-head-actions {
+  display: flex;
+  gap: 4px;
+}
+.ids-icon {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 4px 7px;
+  cursor: pointer;
+}
+.ids-icon:hover {
+  background: var(--bg);
+  border-color: var(--border);
+  color: var(--text);
+}
+.ids-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+.ids-empty-state {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ids-overall {
+  font-weight: 700;
+  font-size: 0.92rem;
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+.ids-overall.ok {
+  background: rgba(48, 164, 108, 0.16);
+  color: #2f9e6b;
+}
+.ids-overall.bad {
+  background: rgba(229, 72, 77, 0.14);
+  color: #e5484d;
+}
+.ids-pass-num {
+  color: #2f9e6b;
+}
+.ids-progress.slim {
+  height: 16px;
+  margin-top: 8px;
+}
+.ids-tip {
+  font-size: 0.74rem;
+  color: var(--muted);
+  margin: 10px 0;
+}
+.ids-export-btn {
+  width: 100%;
+  margin-bottom: 10px;
+}
+.ids-filechip {
+  display: inline-block;
+  margin: 8px 0;
+  padding: 2px 8px;
+  font-size: 0.74rem;
+  color: var(--muted);
+  background: var(--surface-2);
+  border-radius: 999px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

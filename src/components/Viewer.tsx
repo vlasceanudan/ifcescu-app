@@ -8,6 +8,13 @@ import { buildTree, getSelectionProps, gatherFileInfo } from "../viewer/model";
 import { MeasureTool, type MeasureMode } from "../viewer/measure";
 import { IfcTree, type TreeNode } from "./IfcTree";
 import { PropAccordion, FileInfoPanel, type PropGroup, type FileInfo } from "./PropsPanel";
+import { BcfPanel } from "./BcfPanel";
+import { IdsPanel } from "./IdsPanel";
+import type { IDSValidationReport } from "../ifc/ids";
+import { createBCFFromIDSReport, addTopicToProject, type BCFProject } from "../ifc/bcf";
+
+// Non-conforming IDS elements are painted this red in the 3D view.
+const IDS_FAIL_COLOR: [number, number, number, number] = [0.85, 0.13, 0.13, 1];
 
 interface Props {
   bytes: Uint8Array;
@@ -16,6 +23,12 @@ interface Props {
   georef: GeorefInfo | null;
   favorites: Set<string>;
   onToggleFavorite: (key: string) => void;
+  /** Shared BCF project (lifted to App so it survives tab switches / new imports). */
+  bcfProject?: BCFProject | null;
+  onBcfProject?: (p: BCFProject) => void;
+  /** IDS validation report (docked IDS panel lives inside the 3D viewer). */
+  idsReport?: IDSValidationReport | null;
+  onIdsReport?: (r: IDSValidationReport | null) => void;
 }
 
 const VIEWER_BG: Record<Theme, [number, number, number, number]> = {
@@ -58,7 +71,7 @@ function Dropdown({ label, icon, active, children }: { label: string; icon: stri
   );
 }
 
-export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavorite }: Props) {
+export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavorite, bcfProject, onBcfProject, idsReport, onIdsReport }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<ViewerEngine | null>(null);
@@ -94,6 +107,9 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
   const [tree, setTree] = useState<TreeNode | null>(null);
   const [visibleIds, setVisibleIds] = useState<Set<number>>(new Set());
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [ready, setReady] = useState(false);
+  // The right dock hosts EITHER the IDS panel or the BCF panel (toolbar toggles).
+  const [dock, setDock] = useState<"none" | "ids" | "bcf">("none");
 
   const displayTree = useMemo(() => (tree ? groupByClass(tree, { n: 0 }) : tree), [tree]);
 
@@ -143,7 +159,8 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
         setFileInfo(
           gatherFileInfo(store, allIDs.length, bytes.length, fileName, detectSchema(bytes), georefRef.current, centroid),
         );
-        setStatus("Model încărcat • orbit: stânga • pan: dreapta • zoom: scroll • Esc: anulează");
+        setStatus("Model încărcat • orbit: stânga • pan: dreapta/mijloc • zoom: scroll • Esc: anulează");
+        setReady(true);
       } catch (e: any) {
         if (!disposed) setStatus("Eroare la încărcarea modelului: " + (e?.message ?? e));
       }
@@ -177,7 +194,7 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
     if (!section) engineRef.current?.clearSection();
   }, [section]);
 
-  // Keyboard: Esc cancels; H hide/restore selection; Z zoom-to-selection.
+  // Keyboard: Esc cancels; H hide/restore selection; Z zoom extents; F frame selection.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
@@ -190,6 +207,8 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
       } else if (e.key === "h" || e.key === "H") {
         toggleHideSelection();
       } else if (e.key === "z" || e.key === "Z") {
+        engineRef.current?.fit();
+      } else if (e.key === "f" || e.key === "F") {
         if (selectedRef.current.size) engineRef.current?.zoomToSelection(selectedRef.current);
       }
     };
@@ -197,6 +216,41 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Paint non-conforming IDS elements red in the 3D view (and clear when the
+  // report is dropped). Driven by the same report the docked IDS panel shows.
+  useEffect(() => {
+    const eng = engineRef.current;
+    if (!eng || !ready) return;
+    if (!idsReport) {
+      eng.clearColorOverrides();
+      return;
+    }
+    const failing = new Set<number>();
+    for (const spec of idsReport.specificationResults)
+      for (const e of spec.entityResults) if (!e.passed) failing.add(e.expressId);
+    eng.setColorOverrides(failing, IDS_FAIL_COLOR);
+  }, [idsReport, ready]);
+
+  // IDS → BCF: one topic per failing entity, merged into the shared project,
+  // then flip the dock to BCF so the new topics are visible.
+  const exportIdsToBcf = (report: IDSValidationReport) => {
+    const generated = createBCFFromIDSReport(
+      {
+        title: report.document.info.title || "IDS",
+        description: report.document.info.description,
+        specificationResults: report.specificationResults,
+      },
+      { projectName: report.document.info.title || fileName, version: "2.1" },
+    );
+    if (bcfProject) {
+      for (const t of generated.topics.values()) addTopicToProject(bcfProject, t);
+      onBcfProject?.({ ...bcfProject });
+    } else {
+      onBcfProject?.(generated);
+    }
+    setDock("bcf");
+  };
 
   function wireEvents(host: HTMLElement) {
     host.onclick = async (ev: MouseEvent) => {
@@ -442,6 +496,18 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
             <div className="vmenu-sep" />
             <button className="vmenu-item" onClick={() => engineRef.current?.fit()}><span className="ic">⤢</span> Încadrează tot</button>
           </Dropdown>
+
+          <span className="vsep" />
+
+          <button className={"vbtn" + (dock === "ids" ? " active" : "")} onClick={() => setDock((d) => (d === "ids" ? "none" : "ids"))}>
+            <span className="ic">📋</span>
+            <span>IDS</span>
+          </button>
+
+          <button className={"vbtn" + (dock === "bcf" ? " active" : "")} onClick={() => setDock((d) => (d === "bcf" ? "none" : "bcf"))}>
+            <span className="ic">💬</span>
+            <span>BCF</span>
+          </button>
         </div>
 
         <div className="viewer-host" ref={hostRef} style={{ position: "relative" }}>
@@ -508,6 +574,34 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
           )}
         </div>
       </aside>
+
+      {dock === "ids" && onIdsReport && (
+        <IdsPanel
+          bytes={bytes}
+          fileName={fileName}
+          report={idsReport ?? null}
+          onReport={onIdsReport}
+          onSelectEntity={(id) => {
+            selectIds([id], id);
+            engineRef.current?.zoomToSelection(new Set([id]));
+          }}
+          onExportBcf={exportIdsToBcf}
+          onClose={() => setDock("none")}
+        />
+      )}
+
+      {dock === "bcf" && (
+        <BcfPanel
+          engine={engineRef.current}
+          store={storeRef.current}
+          fileName={fileName}
+          selectedIds={[...selectedIds]}
+          onApplySelection={(ids) => selectIds(ids, ids.length === 1 ? ids[0] : undefined)}
+          bcfProject={bcfProject ?? null}
+          onBcfProject={(p) => onBcfProject?.(p)}
+          onClose={() => setDock("none")}
+        />
+      )}
     </div>
   );
 }

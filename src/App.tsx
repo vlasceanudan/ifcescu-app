@@ -7,6 +7,8 @@ import { UploadPanel } from "./components/UploadPanel";
 import { EditorForm } from "./components/EditorForm";
 import { Viewer } from "./components/Viewer";
 import { GlobeViewer } from "./components/GlobeViewer";
+import type { IDSValidationReport } from "./ifc/ids";
+import type { BCFProject } from "./ifc/bcf";
 
 interface Loaded {
   editor: IfcEditor;
@@ -27,6 +29,10 @@ export default function App() {
   // Favorited property names for the 3D viewer's property panel. Owned here so a
   // new import resets them (they belong to the currently loaded model).
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  // IDS report + BCF project. Owned here (same per-model lifecycle as favorites)
+  // so a new import resets them; both surface in the docked panels of the 3D viewer.
+  const [idsReport, setIdsReport] = useState<IDSValidationReport | null>(null);
+  const [bcfProject, setBcfProject] = useState<BCFProject | null>(null);
   const toggleFavorite = (key: string) =>
     setFavorites((s) => {
       const x = new Set(s);
@@ -39,6 +45,8 @@ export default function App() {
     setBusy(true);
     setLoaded(null);
     setFavorites(new Set()); // reset favorites for the new model
+    setIdsReport(null);
+    setBcfProject(null);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const editor = await IfcEditor.open(bytes);
@@ -144,6 +152,10 @@ export default function App() {
             georef={loaded.georef}
             favorites={favorites}
             onToggleFavorite={toggleFavorite}
+            bcfProject={bcfProject}
+            onBcfProject={setBcfProject}
+            idsReport={idsReport}
+            onIdsReport={setIdsReport}
           />
         )}
 

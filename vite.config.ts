@@ -6,6 +6,10 @@ import cesium from "vite-plugin-cesium";
 // GitHub Pages path (user.github.io/<repo>/) without rebuilding.
 export default defineConfig({
   base: "./",
+  // @ifc-lite/ids bundles a top-level `await import()` (a Node-only branch of its
+  // XML parser). Top-level await needs a modern target; the app already requires
+  // WebGPU, so targeting esnext is safe and avoids the es2020 transpile error.
+  build: { target: "esnext" },
   plugins: [
     react(),
     // Copies Cesium's static assets (Workers/Assets/Widgets/ThirdParty) into the
@@ -18,5 +22,8 @@ export default defineConfig({
   // (otherwise the bundled deps lose the worker/wasm asset references).
   optimizeDeps: {
     exclude: ["@ifc-lite/parser", "@ifc-lite/geometry", "@ifc-lite/renderer", "@ifc-lite/wasm"],
+    // @ifc-lite/ids gets pre-bundled (not excluded); its top-level await needs a
+    // modern esbuild target here too, or the dev dep-optimizer fails like the build did.
+    esbuildOptions: { target: "esnext" },
   },
 });

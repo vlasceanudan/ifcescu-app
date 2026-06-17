@@ -6,6 +6,7 @@ import { Renderer, planeBasis, nearestCardinalAxis } from "@ifc-lite/renderer";
 import type { SectionPlane } from "@ifc-lite/renderer";
 import { GeometryProcessor, type MeshData } from "@ifc-lite/geometry";
 import type { IfcDataStore } from "@ifc-lite/parser";
+import type { ViewerCameraState, ViewerBounds } from "@ifc-lite/bcf";
 import { parseStore } from "../ifc/store";
 
 export interface RenderState {
@@ -336,7 +337,7 @@ export class ViewerEngine {
       const dx = e.clientX - lx, dy = e.clientY - ly;
       lx = e.clientX; ly = e.clientY;
       if (btn === 0) cam.orbit(dx * ORBIT_SENS, dy * ORBIT_SENS, false);
-      else if (btn === 2) cam.pan(dx * PAN_SENS, dy * PAN_SENS, false);
+      else if (btn === 2 || btn === 1) cam.pan(dx * PAN_SENS, dy * PAN_SENS, false);
       this.renderer.requestRender();
     };
     const onUp = (e: PointerEvent) => {
@@ -350,18 +351,22 @@ export class ViewerEngine {
       this.renderer.requestRender();
     };
     const onCtx = (e: Event) => e.preventDefault();
+    // Suppress the middle-button autoscroll (Chrome/Edge on Windows) so it can pan.
+    const onMouseDown = (e: MouseEvent) => { if (e.button === 1) e.preventDefault(); };
 
     cv.addEventListener("pointerdown", onDown);
     cv.addEventListener("pointermove", onMove);
     cv.addEventListener("pointerup", onUp);
     cv.addEventListener("wheel", onWheel, { passive: false });
     cv.addEventListener("contextmenu", onCtx);
+    cv.addEventListener("mousedown", onMouseDown);
     this.detach = () => {
       cv.removeEventListener("pointerdown", onDown);
       cv.removeEventListener("pointermove", onMove);
       cv.removeEventListener("pointerup", onUp);
       cv.removeEventListener("wheel", onWheel);
       cv.removeEventListener("contextmenu", onCtx);
+      cv.removeEventListener("mousedown", onMouseDown);
     };
   }
 
@@ -562,6 +567,66 @@ export class ViewerEngine {
 
   async screenshot(): Promise<string | null> {
     return this.renderer.captureScreenshot();
+  }
+
+  // --- BCF viewpoint capture / apply --------------------------------------
+  // Camera coords stay in the renderer's raw Y-up world space; the @ifc-lite/bcf
+  // helpers (createViewpoint/extractViewpointState) do the Y-up↔Z-up conversion
+  // themselves, so we must NOT pre-convert with worldToIfc here.
+  getCameraState(): ViewerCameraState {
+    const cam = this.renderer.getCamera();
+    const p = cam.getPosition(), t = cam.getTarget(), u = cam.getUp();
+    const ortho = cam.getProjectionMode() === "orthographic";
+    return {
+      position: { x: p.x, y: p.y, z: p.z },
+      target: { x: t.x, y: t.y, z: t.z },
+      up: { x: u.x, y: u.y, z: u.z },
+      fov: cam.getFOV(),
+      isOrthographic: ortho,
+      orthoScale: ortho ? cam.getOrthoSize() : undefined,
+    };
+  }
+
+  /** Overall model bounds as a {min,max} box (renderer Y-up world) for viewpoints. */
+  getModelBoundsState(): ViewerBounds | null {
+    const b = this.modelBounds();
+    if (!b) return null;
+    return {
+      min: { x: b.min[0], y: b.min[1], z: b.min[2] },
+      max: { x: b.max[0], y: b.max[1], z: b.max[2] },
+    };
+  }
+
+  // --- per-element color overrides (e.g. IDS non-conforming = red) --------
+  /** Paint the given elements with a fixed RGBA (0..1) override; replaces any prior set. */
+  setColorOverrides(ids: Iterable<number>, color: [number, number, number, number]): void {
+    const device = this.renderer.getGPUDevice();
+    const pipeline = this.renderer.getPipeline();
+    if (!device || !pipeline) return;
+    const scene = this.renderer.getScene();
+    const map = new Map<number, [number, number, number, number]>();
+    for (const id of ids) map.set(id, color);
+    if (map.size) scene.setColorOverrides(map, device, pipeline);
+    else scene.clearColorOverrides();
+    this.renderer.requestRender();
+  }
+
+  /** Remove all color overrides (restore original element colors). */
+  clearColorOverrides(): void {
+    this.renderer.getScene().clearColorOverrides();
+    this.renderer.requestRender();
+  }
+
+  /** Restore a camera pose captured in a BCF viewpoint (Y-up world coords). */
+  applyCameraState(s: ViewerCameraState): void {
+    const cam = this.renderer.getCamera();
+    cam.setProjectionMode(s.isOrthographic ? "orthographic" : "perspective");
+    cam.setPosition(s.position.x, s.position.y, s.position.z);
+    cam.setTarget(s.target.x, s.target.y, s.target.z);
+    cam.setUp(s.up.x, s.up.y, s.up.z);
+    cam.setFOV(s.fov);
+    if (s.isOrthographic && s.orthoScale != null) cam.setOrthoSize(s.orthoScale);
+    this.renderer.requestRender();
   }
 
   dispose(): void {
