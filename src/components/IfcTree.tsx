@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { IFC_ENTITY_NAMES } from "@ifc-lite/data";
 
 export interface TreeNode {
@@ -27,18 +26,41 @@ interface Props {
   /** Top-level nodes. Spatial view passes a single project node; Class/Material
    * views pass the group nodes directly (no IfcProject wrapper). */
   roots: TreeNode[];
+  /** Expansion is fully controlled by the parent so it survives view switches
+   *  (the parent keeps one set per view). A node is open iff its id is present. */
+  expanded: Set<number>;
+  onToggle: (expressID: number) => void;
+  onCollapseAll: () => void;
+  onExpandAll: () => void;
   visibleIds: Set<number>;
   selectedIds: Set<number>;
   onSelect: (ids: number[], expressID: number) => void;
   onToggleVisible: (ids: number[], visible: boolean) => void;
 }
 
-export function IfcTree({ roots, visibleIds, selectedIds, onSelect, onToggleVisible }: Props) {
+/** Whether a node is open by default (used by the parent to seed the expanded set). */
+export function defaultNodeOpen(node: TreeNode, depth: number): boolean {
+  return node.defaultOpen ?? depth < 2;
+}
+
+export function IfcTree({ roots, expanded, onToggle, onCollapseAll, onExpandAll, visibleIds, selectedIds, onSelect, onToggleVisible }: Props) {
   return (
-    <div className="ifctree">
-      {roots.map((node) => (
-        <Node key={node.expressID} node={node} depth={0} {...{ visibleIds, selectedIds, onSelect, onToggleVisible }} />
-      ))}
+    <div className="ifctree-body">
+      <div className="ifctree-toolbar">
+        <button className="tree-act" title="Restrânge tot" onClick={onCollapseAll}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 9l8-5 8 5M4 15l8 5 8-5M9 12h6" /></svg>
+          <span>Restrânge tot</span>
+        </button>
+        <button className="tree-act" title="Extinde tot" onClick={onExpandAll}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 9l8 5 8-5M4 15l8 5 8-5" /></svg>
+          <span>Extinde tot</span>
+        </button>
+      </div>
+      <div className="ifctree">
+        {roots.map((node) => (
+          <Node key={node.expressID} node={node} depth={0} {...{ expanded, onToggle, visibleIds, selectedIds, onSelect, onToggleVisible }} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -46,12 +68,14 @@ export function IfcTree({ roots, visibleIds, selectedIds, onSelect, onToggleVisi
 function Node({
   node,
   depth,
+  expanded,
+  onToggle,
   visibleIds,
   selectedIds,
   onSelect,
   onToggleVisible,
-}: { node: TreeNode; depth: number } & Omit<Props, "roots">) {
-  const [open, setOpen] = useState(node.defaultOpen ?? depth < 2);
+}: { node: TreeNode; depth: number } & Omit<Props, "roots" | "onCollapseAll" | "onExpandAll">) {
+  const open = expanded.has(node.expressID);
   const hasChildren = node.children.length > 0;
 
   const anyVisible = node.ids.some((id) => visibleIds.has(id));
@@ -81,7 +105,7 @@ function Node({
       >
         <span
           className="tcaret"
-          onClick={() => hasChildren && setOpen((o) => !o)}
+          onClick={() => hasChildren && onToggle(node.expressID)}
           style={{ visibility: hasChildren ? "visible" : "hidden" }}
         >
           {open ? "▾" : "▸"}
@@ -111,6 +135,8 @@ function Node({
             key={c.expressID}
             node={c}
             depth={depth + 1}
+            expanded={expanded}
+            onToggle={onToggle}
             visibleIds={visibleIds}
             selectedIds={selectedIds}
             onSelect={onSelect}

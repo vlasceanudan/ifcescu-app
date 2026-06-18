@@ -6,7 +6,7 @@ import { detectSchema } from "../ifc/store";
 import { ViewerEngine } from "../viewer/engine";
 import { buildTree, buildClassTree, buildMaterialTree, getSelectionProps, gatherFileInfo, offsetTree, modelRootNode } from "../viewer/model";
 import { MeasureTool, type MeasureMode } from "../viewer/measure";
-import { IfcTree, type TreeNode } from "./IfcTree";
+import { IfcTree, defaultNodeOpen, type TreeNode } from "./IfcTree";
 import { PropAccordion, FileInfoPanel, type PropGroup, type FileInfo } from "./PropsPanel";
 import { BcfPanel } from "./BcfPanel";
 import { IdsPanel } from "./IdsPanel";
@@ -63,7 +63,7 @@ const sectionCtlStyle: CSSProperties = {
 };
 
 /** Grouped toolbar dropdown (closes on click-outside / Escape). */
-function Dropdown({ label, icon, active, children }: { label: string; icon: string; active?: boolean; children: ReactNode }) {
+function Dropdown({ label, icon, active, children }: { label: string; icon: ReactNode; active?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -100,6 +100,29 @@ function ViewIcon({ kind }: { kind: "iso" | "up" | "down" | "left" | "right" | "
     case "front": return <svg {...a}><rect x="5" y="5" width="14" height="14" rx="1.5" fill="currentColor" stroke="none" /></svg>;
     case "back": return <svg {...a}><rect x="5" y="5" width="14" height="14" rx="1.5" /></svg>;
     case "iso": return <svg {...a}><path d="M12 2l8 4.6v9.2L12 22l-8-4.6V6.6z" /><path d="M12 11.3l8-4.6M12 11.3v10.4M12 11.3L4 6.7" /></svg>;
+  }
+}
+
+/** Line icons for the toolbar (replace the colored emoji to match the app style). */
+function ToolIcon({ kind }: { kind: "section" | "ids" | "bcf" | "table" | "point" }) {
+  const a = { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  switch (kind) {
+    case "section": return <svg {...a}><circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12" /></svg>;
+    case "ids": return <svg {...a}><path d="M9 3h6v3H9zM7 4.5H5a1 1 0 0 0-1 1V20a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V5.5a1 1 0 0 0-1-1h-2" /><path d="M8.5 13.5l2.2 2.2 4.3-4.6" /></svg>;
+    case "bcf": return <svg {...a}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>;
+    case "table": return <svg {...a}><rect x="3" y="4" width="18" height="16" rx="1.5" /><path d="M3 9.5h18M3 15h18M9 4v16" /></svg>;
+    case "point": return <svg {...a}><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="2.6" /></svg>;
+  }
+}
+
+/** Line icons for the "Vizibilitate" menu (match the rest of the app's SVG style). */
+function VisIcon({ kind }: { kind: "hide" | "isolate" | "frame" | "show" }) {
+  const a = { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  switch (kind) {
+    case "hide": return <svg {...a}><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z" /><circle cx="12" cy="12" r="2.6" /><path d="M3 3l18 18" /></svg>;
+    case "isolate": return <svg {...a}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none" /></svg>;
+    case "frame": return <svg {...a}><circle cx="12" cy="12" r="4" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" /></svg>;
+    case "show": return <svg {...a}><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z" /><circle cx="12" cy="12" r="2.6" /></svg>;
   }
 }
 
@@ -147,12 +170,22 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
   const [selHeader, setSelHeader] = useState<{ name: string; type: string } | null>(null);
   const [propsWidth, setPropsWidth] = useState(340);
   const [treeWidth, setTreeWidth] = useState(300);
+  // Vertical size of the "Modele" panel. null = auto (CSS-capped at 40%); once the
+  // user drags the divider it becomes a fixed pixel height.
+  const [modelsHeight, setModelsHeight] = useState<number | null>(null);
   // Per-model forests (one MODEL root per model). Built by rebuildForests().
   const [spatialRoots, setSpatialRoots] = useState<TreeNode[] | null>(null);
   const [classRoots, setClassRoots] = useState<TreeNode[] | null>(null);
   const [materialRoots, setMaterialRoots] = useState<TreeNode[] | null>(null);
   // Active left-panel view: spatial hierarchy, grouped by IFC class, or by material.
   const [treeView, setTreeView] = useState<"spatial" | "class" | "material">("spatial");
+  // Tree expansion is owned here (one open-id set per view) so it survives switching
+  // between Spațial/Clase/Materiale tabs — IfcTree no longer remounts/loses state.
+  const [expandedByView, setExpandedByView] = useState<Record<"spatial" | "class" | "material", Set<number>>>({
+    spatial: new Set(),
+    class: new Set(),
+    material: new Set(),
+  });
   // Models list shown in the "Modele" panel; bumped version re-memoizes pivot input.
   const [modelList, setModelList] = useState<{ id: string; fileName: string; primary: boolean; visible: boolean; schema: string }[]>([]);
   const [busyAdd, setBusyAdd] = useState(false);
@@ -177,6 +210,16 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
 
   // Each view is a forest of per-model MODEL roots (built in rebuildForests).
   const activeRoots = treeView === "class" ? classRoots : treeView === "material" ? materialRoots : spatialRoots;
+  const expanded = expandedByView[treeView];
+
+  const toggleNode = (id: number) =>
+    setExpandedByView((m) => {
+      const next = new Set(m[treeView]);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return { ...m, [treeView]: next };
+    });
+  const collapseAllTree = () => setExpandedByView((m) => ({ ...m, [treeView]: new Set<number>() }));
+  const expandAllTree = () => setExpandedByView((m) => ({ ...m, [treeView]: collectAllIds(activeRoots ?? []) }));
 
   // Pivot input: all loaded models' stores (memoized on the loaded-set version).
   const pivotModels = useMemo<PivotModel[]>(
@@ -474,6 +517,13 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
     setSpatialRoots(spatial);
     setClassRoots(cls);
     setMaterialRoots(mat);
+    // Seed each view's expansion with its default-open nodes. Rebuilds happen on
+    // federation changes (add/remove model), where resetting expansion is expected.
+    setExpandedByView({
+      spatial: collectDefaultOpen(spatial),
+      class: collectDefaultOpen(cls),
+      material: collectDefaultOpen(mat),
+    });
   };
 
   // --- visibility ---------------------------------------------------------
@@ -599,6 +649,21 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   };
+  const startModelsResize = (e: ReactMouseEvent) => {
+    e.preventDefault();
+    // The panel sits directly before the divider; measure from its top edge so the
+    // height tracks the cursor regardless of the toolbar/header above it.
+    const panel = (e.currentTarget as HTMLElement).previousElementSibling as HTMLElement | null;
+    const top = panel?.getBoundingClientRect().top ?? 0;
+    const onMove = (ev: MouseEvent) =>
+      setModelsHeight(Math.min(window.innerHeight * 0.75, Math.max(80, ev.clientY - top)));
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
   const startTreeResize = (e: ReactMouseEvent) => {
     e.preventDefault();
     const onMove = (ev: MouseEvent) => setTreeWidth(Math.min(560, Math.max(200, ev.clientX - 12)));
@@ -634,7 +699,9 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
           onToggleVisible={toggleModelVisible}
           onRemove={onRemoveModel}
           onAddModel={onAddModel}
+          height={modelsHeight}
         />
+        <div className="models-resize" onMouseDown={startModelsResize} title="Trageți pentru a redimensiona lista de modele" />
         <div className="tree-tabs">
           <button className={"tree-tab" + (treeView === "spatial" ? " active" : "")} onClick={() => setTreeView("spatial")}>Spațial</button>
           <button className={"tree-tab" + (treeView === "class" ? " active" : "")} onClick={() => setTreeView("class")}>Clase</button>
@@ -642,8 +709,11 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
         </div>
         {activeRoots ? (
           <IfcTree
-            key={treeView}
             roots={activeRoots}
+            expanded={expanded}
+            onToggle={toggleNode}
+            onCollapseAll={collapseAllTree}
+            onExpandAll={expandAllTree}
             visibleIds={visibleIds}
             selectedIds={selectedIds}
             onSelect={(ids, expressID) => selectIds(ids, expressID)}
@@ -659,7 +729,7 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
         <div className="vtoolbar">
           <Dropdown label="Măsurare" icon="📐" active={measureMode !== "none"}>
             <button className={"vmenu-item" + (measureMode === "length" ? " active" : "")} onClick={() => chooseMeasure("length")}><span className="ic">📏</span> Distanță</button>
-            <button className={"vmenu-item" + (measureMode === "point" ? " active" : "")} onClick={() => chooseMeasure("point")}><span className="ic">📍</span> Punct</button>
+            <button className={"vmenu-item" + (measureMode === "point" ? " active" : "")} onClick={() => chooseMeasure("point")}><span className="ic"><ToolIcon kind="point" /></span> Punct</button>
             <button className={"vmenu-item" + (measureMode === "area" ? " active" : "")} onClick={() => chooseMeasure("area")}><span className="ic">▱</span> Suprafață</button>
             <div className="vmenu-sep" />
             <div onClick={(e) => e.stopPropagation()} style={{ padding: "4px 12px", fontSize: 12 }}>
@@ -676,9 +746,9 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
 
           <span className="vsep" />
 
-          <Dropdown label="Secțiune" icon="✂️" active={section}>
+          <Dropdown label="Secțiune" icon={<ToolIcon kind="section" />} active={section}>
             <button className={"vmenu-item" + (section ? " active" : "")} onClick={toggleSection}>
-              <span className="ic">✂️</span><span>Plan de secțiune</span><span className="vmenu-key">S</span>
+              <span className="ic"><ToolIcon kind="section" /></span><span>Plan de secțiune</span><span className="vmenu-key">S</span>
             </button>
             <div className="vmenu-sep" />
             <button className="vmenu-item danger" onClick={clearSections}><span className="ic">🗑</span><span>Șterge secțiunile</span></button>
@@ -688,18 +758,16 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
 
           <Dropdown label="Vizibilitate" icon="👁">
             <button className="vmenu-item" onClick={() => hideIds(selArr())}>
-              <span className="ic">🙈</span><span>Ascunde selecția</span><span className="vmenu-key">H</span>
+              <span className="ic"><VisIcon kind="hide" /></span><span>Ascunde selecția</span><span className="vmenu-key">H</span>
             </button>
             <button className="vmenu-item" onClick={() => isolateIds(selArr())}>
-              <span className="ic">🎯</span><span>Izolează selecția</span><span className="vmenu-key">I</span>
+              <span className="ic"><VisIcon kind="isolate" /></span><span>Izolează selecția</span><span className="vmenu-key">I</span>
             </button>
             <button className="vmenu-item" onClick={() => { if (selectedRef.current.size) engineRef.current?.zoomToSelection(selectedRef.current); }}>
-              <span className="ic">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" /></svg>
-              </span><span>Încadrează selecția</span><span className="vmenu-key">F</span>
+              <span className="ic"><VisIcon kind="frame" /></span><span>Încadrează selecția</span><span className="vmenu-key">F</span>
             </button>
             <div className="vmenu-sep" />
-            <button className="vmenu-item" onClick={showAll}><span className="ic">👁</span><span>Afișează tot</span></button>
+            <button className="vmenu-item" onClick={showAll}><span className="ic"><VisIcon kind="show" /></span><span>Afișează tot</span></button>
           </Dropdown>
 
           <span className="vsep" />
@@ -732,17 +800,17 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
           <span className="vsep" />
 
           <button className={"vbtn" + (dock === "ids" ? " active" : "")} onClick={() => setDock((d) => (d === "ids" ? "none" : "ids"))}>
-            <span className="ic">📋</span>
+            <span className="ic"><ToolIcon kind="ids" /></span>
             <span>IDS</span>
           </button>
 
           <button className={"vbtn" + (dock === "bcf" ? " active" : "")} onClick={() => setDock((d) => (d === "bcf" ? "none" : "bcf"))}>
-            <span className="ic">💬</span>
+            <span className="ic"><ToolIcon kind="bcf" /></span>
             <span>BCF</span>
           </button>
 
           <button className={"vbtn" + (tableOpen ? " active" : "")} onClick={() => setTableOpen((o) => !o)}>
-            <span className="ic">📊</span>
+            <span className="ic"><ToolIcon kind="table" /></span>
             <span>Tabel</span>
           </button>
         </div>
@@ -876,6 +944,24 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
       )}
     </div>
   );
+}
+
+// Ids of every node that starts open by default (mirrors IfcTree's per-node rule).
+function collectDefaultOpen(roots: TreeNode[], depth = 0, acc = new Set<number>()): Set<number> {
+  for (const n of roots) {
+    if (defaultNodeOpen(n, depth)) acc.add(n.expressID);
+    collectDefaultOpen(n.children, depth + 1, acc);
+  }
+  return acc;
+}
+
+// Ids of every node that has children (i.e. everything that can be expanded).
+function collectAllIds(roots: TreeNode[], acc = new Set<number>()): Set<number> {
+  for (const n of roots) {
+    if (n.children.length) acc.add(n.expressID);
+    collectAllIds(n.children, acc);
+  }
+  return acc;
 }
 
 // Spatial containers are never grouped; element children are grouped by IFC class.

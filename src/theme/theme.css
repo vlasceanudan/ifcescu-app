@@ -605,8 +605,13 @@ table.summary td.k {
   background: var(--bs-magenta);
   opacity: 0.3;
 }
-/* "Modele" federation section at the top of the left panel */
+/* "Modele" federation section at the top of the left panel.
+   Capped so a large federation never crowds out the IFC tree below it: the
+   panel takes at most ~40% of the left column and the row list scrolls inside. */
 .models-panel {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 40%;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -614,12 +619,21 @@ table.summary td.k {
   border-bottom: 1px solid var(--border);
 }
 .models-head {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
   font-weight: 700;
   font-size: 0.82rem;
   color: var(--muted);
+}
+.models-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 .models-add {
   background: none;
@@ -672,6 +686,30 @@ table.summary td.k {
 .models-busy {
   font-size: 0.75rem;
   color: var(--muted);
+}
+
+/* Draggable divider that resizes the "Modele" panel vertically */
+.models-resize {
+  flex: 0 0 auto;
+  height: 8px;
+  margin: -4px 0;
+  cursor: row-resize;
+  position: relative;
+  z-index: 5;
+}
+.models-resize::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 36px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+}
+.models-resize:hover::after {
+  background: var(--bs-magenta);
 }
 
 /* Segmented view switcher (Spatial / Class / Material) at the top of the tree panel */
@@ -925,6 +963,37 @@ table.summary td.k {
   gap: 8px;
   font-size: 0.86rem;
   cursor: pointer;
+}
+/* IfcTree wrapper: fixed collapse/expand toolbar above the scrolling tree */
+.ifctree-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ifctree-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.tree-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.tree-act:hover {
+  background: var(--surface-2);
+  color: var(--text);
 }
 .ifctree {
   flex: 1;
