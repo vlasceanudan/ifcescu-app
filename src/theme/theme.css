@@ -3,8 +3,16 @@
   --bs-magenta: #e6007e;
   --bs-magenta-dark: #c00069;
   --bs-teal: #00a0af;
+  --bs-cyan: #15d1d6; /* bright buildingSMART cyan, used as the dark-mode accent */
   --bs-blue: #1d4f91;
   --bs-purple: #92278f;
+
+  /* Semantic accent: magenta in light mode, cyan in dark (set in the dark block).
+     --accent-rgb feeds rgba() for translucent fills; --on-accent is the text/icon
+     color that sits on a filled accent background. */
+  --accent: var(--bs-magenta);
+  --accent-rgb: 230, 0, 126;
+  --on-accent: #ffffff;
 
   /* light surfaces (default) — white cards floating on a light-gray page */
   --app-bg: #f3f4f7; /* page background behind the cards */
@@ -31,6 +39,11 @@
   --viewer-bg: #0a0e1a;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.5);
   --logo-building: #eef1fa; /* "building" letters in dark mode (near-white) */
+
+  /* Dark mode swaps the accent to buildingSMART cyan; dark text reads on it. */
+  --accent: var(--bs-cyan);
+  --accent-rgb: 21, 209, 214;
+  --on-accent: #06202a;
 }
 
 * {
@@ -173,7 +186,7 @@ body {
   font-size: 0.9rem;
 }
 .toggle:hover {
-  border-color: var(--bs-magenta);
+  border-color: var(--accent);
 }
 
 /* Tabs */
@@ -194,8 +207,8 @@ body {
   cursor: pointer;
 }
 .tab.active {
-  color: var(--bs-magenta);
-  border-bottom-color: var(--bs-magenta);
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 
 /* Tabs inside the top bar: centred outlined chips (active = soft magenta) */
@@ -225,9 +238,9 @@ body {
   color: var(--text);
 }
 .topbar-tabs .tab.active {
-  background: rgba(230, 0, 126, 0.1);
-  border-color: rgba(230, 0, 126, 0.35);
-  color: var(--bs-magenta);
+  background: rgba(var(--accent-rgb), 0.1);
+  border-color: rgba(var(--accent-rgb), 0.35);
+  color: var(--accent);
   box-shadow: none;
 }
 
@@ -297,8 +310,8 @@ body {
 .field input:focus,
 .field select:focus {
   outline: none;
-  border-color: var(--bs-magenta);
-  box-shadow: 0 0 0 3px rgba(230, 0, 126, 0.18);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.18);
 }
 .row {
   display: grid;
@@ -320,9 +333,9 @@ body {
 
 /* Buttons */
 .btn {
-  background: var(--bs-magenta);
-  color: #fff;
-  border: 1px solid var(--bs-magenta);
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 1px solid var(--accent);
   border-radius: 8px;
   padding: 10px 18px;
   font-weight: 600;
@@ -340,11 +353,11 @@ body {
 }
 .btn.secondary {
   background: transparent;
-  color: var(--bs-magenta);
+  color: var(--accent);
 }
 .btn.secondary:hover {
-  background: var(--bs-magenta);
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 /* Alerts */
@@ -359,8 +372,8 @@ body {
   border: 1px solid var(--bs-teal);
 }
 .alert.warn {
-  background: rgba(230, 0, 126, 0.1);
-  border: 1px solid var(--bs-magenta);
+  background: rgba(var(--accent-rgb), 0.1);
+  border: 1px solid var(--accent);
 }
 .alert.error {
   background: rgba(200, 0, 40, 0.12);
@@ -392,7 +405,7 @@ table.summary td.k {
   cursor: pointer;
 }
 .dropzone:hover {
-  border-color: var(--bs-magenta);
+  border-color: var(--accent);
   color: var(--text);
 }
 
@@ -430,9 +443,9 @@ table.summary td.k {
   border-color: var(--border);
 }
 .vbtn.active {
-  background: var(--bs-magenta);
-  border-color: var(--bs-magenta);
-  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
 }
 .vbtn .caret {
   font-size: 0.7rem;
@@ -477,10 +490,10 @@ table.summary td.k {
 }
 .vmenu-item:hover {
   background: var(--surface-2);
-  color: var(--bs-magenta);
+  color: var(--accent);
 }
 .vmenu-item.active {
-  color: var(--bs-magenta);
+  color: var(--accent);
   font-weight: 700;
 }
 .vmenu-item.danger:hover {
@@ -550,7 +563,7 @@ table.summary td.k {
   -webkit-backface-visibility: hidden;
 }
 .navcube-face:hover {
-  background: rgba(230, 0, 126, 0.18);
+  background: rgba(var(--accent-rgb), 0.18);
 }
 .navcube-label {
   pointer-events: none;
@@ -566,7 +579,7 @@ table.summary td.k {
   border-color: rgba(180, 184, 200, 0.45);
 }
 :root[data-theme="dark"] .navcube-face:hover {
-  background: rgba(230, 0, 126, 0.35);
+  background: rgba(var(--accent-rgb), 0.35);
 }
 :root[data-theme="dark"] .navcube-label {
   color: #e6e8ef;
@@ -602,7 +615,7 @@ table.summary td.k {
   z-index: 5;
 }
 .tree-resize:hover {
-  background: var(--bs-magenta);
+  background: var(--accent);
   opacity: 0.3;
 }
 /* "Modele" federation section at the top of the left panel.
@@ -642,7 +655,7 @@ table.summary td.k {
   padding: 3px 8px;
   font-size: 0.76rem;
   font-weight: 600;
-  color: var(--bs-magenta);
+  color: var(--accent);
   cursor: pointer;
 }
 .models-add:hover:not(:disabled) {
@@ -709,7 +722,7 @@ table.summary td.k {
   background: var(--border);
 }
 .models-resize:hover::after {
-  background: var(--bs-magenta);
+  background: var(--accent);
 }
 
 /* Segmented view switcher (Spatial / Class / Material) at the top of the tree panel */
@@ -734,8 +747,8 @@ table.summary td.k {
   background: var(--surface-2);
 }
 .tree-tab.active {
-  background: rgba(230, 0, 126, 0.12);
-  color: var(--bs-magenta);
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent);
 }
 
 /* ===== Data table (pivot) panel, docked at the bottom of the viewer ===== */
@@ -762,7 +775,7 @@ table.summary td.k {
   z-index: 5;
 }
 .datatable-resize:hover {
-  background: var(--bs-magenta);
+  background: var(--accent);
   opacity: 0.3;
 }
 .datatable-head {
@@ -941,7 +954,7 @@ table.summary td.k {
   border: 1px dashed var(--border);
   border-radius: 8px;
   background: transparent;
-  color: var(--bs-magenta);
+  color: var(--accent);
   font-weight: 600;
   cursor: pointer;
 }
@@ -1097,7 +1110,7 @@ table.summary td.k {
   z-index: 5;
 }
 .props-resize:hover {
-  background: var(--bs-magenta);
+  background: var(--accent);
   opacity: 0.3;
 }
 .props-head {
@@ -1116,7 +1129,7 @@ table.summary td.k {
   line-height: 1;
 }
 .props-close:hover {
-  color: var(--bs-magenta);
+  color: var(--accent);
 }
 .props-body {
   flex: 1;
@@ -1174,8 +1187,8 @@ table.summary td.k {
   padding: 0;
 }
 .sel-btn:hover {
-  color: var(--bs-magenta);
-  border-color: var(--bs-magenta);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* Property accordion */
@@ -1397,7 +1410,7 @@ table.summary td.k {
 .globe-card.readout .readout-title {
   font-weight: 700;
   margin-bottom: 6px;
-  color: var(--bs-magenta);
+  color: var(--accent);
 }
 .globe-card.readout table {
   border-collapse: collapse;
@@ -1437,9 +1450,9 @@ table.summary td.k {
   font-size: 0.8rem;
 }
 .globe-card.controls .seg button.active {
-  background: var(--bs-magenta);
-  border-color: var(--bs-magenta);
-  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
 }
 .globe-card.controls .alpha {
   display: flex;
@@ -1602,7 +1615,7 @@ table.summary td.k {
 }
 .ids-entity-go {
   margin-left: auto;
-  color: var(--bs-magenta);
+  color: var(--accent);
   font-size: 0.74rem;
   font-weight: 700;
 }
@@ -1747,7 +1760,7 @@ table.summary td.k {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 3px 8px;
-  color: var(--bs-magenta);
+  color: var(--accent);
   font-size: 0.74rem;
   font-weight: 700;
   cursor: pointer;
@@ -1804,9 +1817,9 @@ table.summary td.k {
   color: var(--text);
 }
 .ids-icon.active {
-  background: rgba(230, 0, 126, 0.12);
-  border-color: var(--bs-magenta);
-  color: var(--bs-magenta);
+  background: rgba(var(--accent-rgb), 0.12);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .ids-panel-body {
   flex: 1;
@@ -1877,8 +1890,8 @@ table.summary td.k {
   cursor: pointer;
 }
 .theme-toggle:hover {
-  border-color: var(--bs-magenta);
-  color: var(--bs-magenta);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* ===== Floating quick-action bar at the bottom of the viewer ===== */
@@ -1911,7 +1924,7 @@ table.summary td.k {
 }
 .viewbar-btn:hover {
   background: var(--surface-2);
-  color: var(--bs-magenta);
+  color: var(--accent);
 }
 .viewbar-sep {
   width: 1px;
