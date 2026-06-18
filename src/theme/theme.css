@@ -828,6 +828,13 @@ table.summary td.k {
   color: var(--muted);
   user-select: none;
 }
+.dt-swatch {
+  flex: 0 0 auto;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+}
 .datatable-table tfoot .dt-total td {
   position: sticky;
   bottom: 0;
@@ -1795,6 +1802,11 @@ table.summary td.k {
   background: var(--bg);
   border-color: var(--border);
   color: var(--text);
+}
+.ids-icon.active {
+  background: rgba(230, 0, 126, 0.12);
+  border-color: var(--bs-magenta);
+  color: var(--bs-magenta);
 }
 .ids-panel-body {
   flex: 1;

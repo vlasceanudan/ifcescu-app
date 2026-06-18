@@ -1,12 +1,15 @@
-import { type MouseEvent as ReactMouseEvent, useMemo, useState } from "react";
+import { type MouseEvent as ReactMouseEvent, useEffect, useMemo, useState } from "react";
 import { DataTableConfig } from "./DataTableConfig";
 import {
   buildPivot,
   discoverFields,
   exportPivotCsv,
+  groupColor,
+  rgbaCss,
   type PivotConfig,
   type PivotModel,
   type PivotRow,
+  type Rgba,
 } from "../viewer/pivot";
 
 interface Props {
@@ -17,6 +20,8 @@ interface Props {
   onConfigChange: (config: PivotConfig) => void;
   /** Select the given GLOBAL ids in the 3D view (row/group click). */
   onSelectRows: (ids: number[]) => void;
+  /** Paint the 3D viewer by top-level group (one color each), or null to clear. */
+  onColorByGroup: (map: Map<number, Rgba> | null) => void;
   onClose: () => void;
 }
 
@@ -25,13 +30,34 @@ const fmt = (v: number | null) => (v == null ? "—" : nf.format(v));
 
 /** Bottom-docked data table (pivot): grouped rows + aggregated value columns,
  *  configured via a popup. Vertically resizable; coexists with the right dock. */
-export function DataTablePanel({ models, fileName, config, onConfigChange, onSelectRows, onClose }: Props) {
+export function DataTablePanel({ models, fileName, config, onConfigChange, onSelectRows, onColorByGroup, onClose }: Props) {
   const [height, setHeight] = useState(300);
   const [showConfig, setShowConfig] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [colorOn, setColorOn] = useState(false);
 
   const fields = useMemo(() => discoverFields(models), [models]);
   const result = useMemo(() => buildPivot(models, config), [models, config]);
+
+  // Color the 3D viewer by the FIRST grouping level: each top-level row gets a
+  // distinct color, applied to every element under it. Swatches double as legend.
+  const coloring = useMemo(() => {
+    const overrides = new Map<number, Rgba>();
+    const swatches = new Map<string, string>();
+    result.rows.forEach((row, i) => {
+      const c = groupColor(i);
+      swatches.set(row.label, rgbaCss(c));
+      for (const id of row.ids) overrides.set(id, c);
+    });
+    return { overrides, swatches };
+  }, [result]);
+
+  // Push the override map to the viewer when active; clear it when off or unmounted.
+  useEffect(() => {
+    onColorByGroup(colorOn ? coloring.overrides : null);
+    return () => onColorByGroup(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colorOn, coloring]);
 
   const toggle = (key: string) =>
     setExpanded((s) => {
@@ -69,6 +95,9 @@ export function DataTablePanel({ models, fileName, config, onConfigChange, onSel
               >
                 {open ? "▾" : "▸"}
               </span>
+              {colorOn && row.depth === 0 && (
+                <span className="dt-swatch" style={{ background: coloring.swatches.get(row.label) }} />
+              )}
               <span className="dt-label">{row.label}</span>
             </span>
           </td>
@@ -89,6 +118,11 @@ export function DataTablePanel({ models, fileName, config, onConfigChange, onSel
       <div className="datatable-head">
         <span className="datatable-title">📊 Tabel de date</span>
         <div className="datatable-actions">
+          <button
+            className={"ids-icon" + (colorOn ? " active" : "")}
+            title={colorOn ? "Oprește colorarea în 3D" : "Colorează elementele 3D după prima grupare"}
+            onClick={() => setColorOn((c) => !c)}
+          >🎨</button>
           <button className="ids-icon" title="Organizare (grupări și coloane)" onClick={() => setShowConfig(true)}>⚙</button>
           <button className="ids-icon" title="Export CSV" onClick={() => exportPivotCsv(result, config, fields, fileName)}>📄</button>
           <button className="ids-icon" title="Închide" onClick={onClose}>×</button>

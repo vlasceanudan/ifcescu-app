@@ -14,7 +14,7 @@ import { DataTablePanel } from "./DataTablePanel";
 import { ModelsPanel } from "./ModelsPanel";
 import { NavCube } from "./NavCube";
 import { ViewBar } from "./ViewBar";
-import type { PivotConfig, PivotModel } from "../viewer/pivot";
+import type { PivotConfig, PivotModel, Rgba } from "../viewer/pivot";
 import type { IDSValidationReport } from "../ifc/ids";
 import { createBCFFromIDSReport, addTopicToProject, type BCFProject } from "../ifc/bcf";
 
@@ -197,6 +197,9 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
   const [ready, setReady] = useState(false);
   // The right dock hosts EITHER the IDS panel or the BCF panel (toolbar toggles).
   const [dock, setDock] = useState<"none" | "ids" | "bcf">("none");
+  // Per-element colors from the data-table "color by group" toggle (null = off).
+  // Takes priority over the IDS red-paint when both could apply.
+  const [groupColorMap, setGroupColorMap] = useState<Map<number, Rgba> | null>(null);
   // Bottom data-table (pivot). Independent of the right dock so they can coexist;
   // the config persists while the panel is toggled off/on.
   const [tableOpen, setTableOpen] = useState(false);
@@ -406,20 +409,23 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Paint non-conforming IDS elements red in the 3D view (and clear when the
-  // report is dropped). Driven by the same report the docked IDS panel shows.
+  // Color overrides have two drivers sharing one channel: the data-table
+  // "color by group" map (takes priority) and the IDS red-paint of non-conforming
+  // elements. Re-applied whenever either changes.
   useEffect(() => {
     const eng = engineRef.current;
     if (!eng || !ready) return;
-    if (!idsReport) {
+    if (groupColorMap && groupColorMap.size) {
+      eng.setColorOverrideMap(groupColorMap);
+    } else if (idsReport) {
+      const failing = new Set<number>();
+      for (const spec of idsReport.specificationResults)
+        for (const e of spec.entityResults) if (!e.passed) failing.add(e.expressId);
+      eng.setColorOverrides(failing, IDS_FAIL_COLOR);
+    } else {
       eng.clearColorOverrides();
-      return;
     }
-    const failing = new Set<number>();
-    for (const spec of idsReport.specificationResults)
-      for (const e of spec.entityResults) if (!e.passed) failing.add(e.expressId);
-    eng.setColorOverrides(failing, IDS_FAIL_COLOR);
-  }, [idsReport, ready]);
+  }, [groupColorMap, idsReport, ready]);
 
   // IDS → BCF: one topic per failing entity, merged into the shared project,
   // then flip the dock to BCF so the new topics are visible.
@@ -872,6 +878,7 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
             config={pivotConfig}
             onConfigChange={setPivotConfig}
             onSelectRows={(ids) => selectIds(ids)}
+            onColorByGroup={setGroupColorMap}
             onClose={() => setTableOpen(false)}
           />
         )}

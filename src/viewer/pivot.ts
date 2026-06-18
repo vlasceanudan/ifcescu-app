@@ -50,6 +50,36 @@ export interface PivotResult {
 }
 
 export const NO_VALUE = "(fără valoare)";
+
+// --- group coloring (data-table → 3D viewer) ------------------------------
+export type Rgba = [number, number, number, number];
+
+/** A distinct, evenly-spread color per group index (golden-angle hue rotation). */
+export function groupColor(i: number): Rgba {
+  const [r, g, b] = hslToRgb(((i * 137.508) % 360) / 360, 0.6, 0.55);
+  return [r, g, b, 1];
+}
+
+/** CSS color string for a swatch, from a 0..1 RGBA tuple. */
+export function rgbaCss([r, g, b]: Rgba): string {
+  return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
+}
+
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  if (s === 0) return [l, l, l];
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const hue2rgb = (t: number) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  return [hue2rgb(h + 1 / 3), hue2rgb(h), hue2rgb(h - 1 / 3)];
+}
+
 const AGG_LABEL: Record<AggKind, string> = {
   sum: "Sumă",
   avg: "Medie",

@@ -862,6 +862,18 @@ export class ViewerEngine {
     this.renderer.requestRender();
   }
 
+  /** Paint elements with per-element RGBA colors (0..1) — e.g. one color per
+   *  data-table group. Replaces any prior override set. */
+  setColorOverrideMap(map: Map<number, [number, number, number, number]>): void {
+    const device = this.renderer.getGPUDevice();
+    const pipeline = this.renderer.getPipeline();
+    if (!device || !pipeline) return;
+    const scene = this.renderer.getScene();
+    if (map.size) scene.setColorOverrides(new Map(map), device, pipeline);
+    else scene.clearColorOverrides();
+    this.renderer.requestRender();
+  }
+
   /** Remove all color overrides (restore original element colors). */
   clearColorOverrides(): void {
     this.renderer.getScene().clearColorOverrides();
