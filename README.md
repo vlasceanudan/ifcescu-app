@@ -1,14 +1,16 @@
-# Plan de situație IFC — web app
+# IFC Studio — web app
 
-A fully client-side web app to enrich a *plan de situație* IFC file with project,
-beneficiary, land-registration, address and **georeferencing** metadata, inspect it
-in an interactive 3D viewer, and place it on a **3D globe** in real-world context.
-Everything runs **in the browser** — IFC parsing/editing/export and geometry via
+A fully client-side web app to **view and edit IFC models**: inspect them in an
+interactive 3D viewer, **edit element attributes and property/quantity values
+directly in the 3D view**, add new property sets (standard class psets *or* custom
+ones), and place the model on a **3D globe** in real-world context. Everything runs
+**in the browser** — IFC parsing/editing/export and geometry via
 [**@ifc-lite**](https://github.com/louistrue/ifc-lite) (Rust → WebAssembly), 3D
 rendering via **@ifc-lite/renderer (WebGPU)**, and the globe via
 [CesiumJS](https://cesium.com/platform/cesiumjs/) — so there is **no server** and it
-can be hosted as a static site on **GitHub Pages**. It is targeted at Romania:
-national projection **Stereo 70 (EPSG:3844)** and vertical datum **Marea Neagră 1975**.
+can be hosted as a static site on **GitHub Pages**. Georeferencing is read for the
+Romanian national projection **Stereo 70 (EPSG:3844)** / vertical datum
+**Marea Neagră 1975**.
 
 Built with **Vite + React + TypeScript**, the buildingSMART colour palette
 (magenta primary, teal/blue accents) and a light/dark theme toggle. Full-screen
@@ -30,25 +32,22 @@ resizable properties panel on the right.
 
 ## Features
 
-### 📝 Editare date (metadata editing)
-- Edit project **number/name**, **beneficiary** (person or organisation — upserted,
-  never duplicated), **`PSet_LandRegistration`** (LandTitleID, LandId) and
-  **`PSet_Address`** (Street, Town, Region/county, PostalCode, Country) on the chosen
-  `IfcSite`.
-- **Add an `IfcSite`** when the model has none: instead of refusing the file, the
-  *Teren* card offers an **Adaugă IfcSite** button (creates the site and aggregates it
-  under the `IfcProject`), so land/address data always has somewhere to attach.
-- **Georeferențiere (Stereo 70)** — a **collapsible** section (closed by default):
-  read/edit the **`IfcMapConversion`** + **`IfcProjectedCRS`** origin —
-  Est (X) / Nord (Y) / Cotă / rotation / scale (IFC4+ only; disabled with a note on
-  IFC2x3). Full-precision easting/northing is preserved on export.
-- Fields **pre-fill** from the model; light validation (postal code, land fields,
-  Stereo 70 bounds).
-- Apply → summary of changes → **download the enriched `.ifc`**.
-- **Non-destructive export** via `@ifc-lite/export`: every untouched record is
-  preserved with full numeric precision (no truncation / malformed reals), and only
-  the entities you created/edited change — the download stays geometrically identical
-  to the source and opens cleanly in other viewers (see [Notes](#notes)).
+### ✏️ Editare în 3D (in-view element editing)
+- Select an element, hit **Editare** in the properties panel, and edit it in place:
+  - **IfcRoot attributes** — Name, Description, ObjectType, Tag.
+  - **Existing property & quantity values** across the element's psets / `Qto_*` sets.
+- **Add a property** to an existing pset, or **add a whole property set**:
+  - **Standard class psets** — the picker lists the `Pset_*` applicable to the element's
+    IFC class (and its supertypes), sourced from `@ifc-lite/data`.
+  - **Custom psets** — any name + your own properties.
+- **Salvează** applies the edits to the model's in-memory overlay and the panel reflects
+  the new values immediately; **Anulează** discards the unsaved form.
+- **Per-model export**: the **Modele** panel offers a download per model that writes the
+  edited `.ifc`. Edited models are flagged.
+- **Non-destructive export** via `@ifc-lite/export`: every untouched record is preserved
+  with full numeric precision (no truncation / malformed reals), and only the entities you
+  edited change — the download stays geometrically identical to the source and opens
+  cleanly in other viewers (see [Notes](#notes)).
 
 ### 🧊 Vizualizare 3D (viewer — WebGPU)
 - **Streaming load**: geometry streams into the WebGPU scene as it tessellates, so the
@@ -57,8 +56,9 @@ resizable properties panel on the right.
   same scene with **Adaugă model**, toggle each one's visibility, or remove it. Models
   share one coordinate space — the first (**primary ★**) sets the origin and the rest
   are placed by their georeference offset, so each keeps its real position. The tree,
-  selection, properties and data table work **across all loaded models**; *Editare date*,
-  *Glob 3D*, IDS and BCF operate on the primary.
+  selection, properties, **in-view editing** and data table work **across all loaded
+  models** (editing applies to whichever model owns the selected element); *Glob 3D*,
+  IDS and BCF operate on the primary.
 - **IFC structure tree** (left, resizable) with **Spatial / Class / Material** tabs and
   **one root per model**. Classes show their **verbatim IFC name in PascalCase**
   (`IfcPile`, `IfcWallStandardCase` — no translation); higher levels are semi-bold and

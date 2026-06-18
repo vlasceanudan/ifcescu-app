@@ -1190,6 +1190,212 @@ table.summary td.k {
   color: var(--accent);
   border-color: var(--accent);
 }
+.sel-btn.active {
+  background: rgba(var(--accent-rgb), 0.12);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.sel-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ===== In-3D edit panel ===== */
+.edit-panel {
+  padding: 8px 10px 12px;
+  font-size: 0.85rem;
+}
+.edit-group {
+  margin-bottom: 12px;
+}
+.edit-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  color: var(--muted);
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
+}
+.edit-group-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.edit-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+.edit-k {
+  flex: 0 0 38%;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.edit-k-input {
+  flex: 0 0 38%;
+  min-width: 0;
+}
+.edit-v {
+  flex: 1;
+  min-width: 0;
+}
+.edit-row input,
+.edit-row select,
+.edit-add input,
+.edit-type {
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.82rem;
+}
+.edit-row select.edit-v {
+  /* Keep the value dropdown inside the row (don't grow to its longest option). */
+  width: 100%;
+  max-width: 100%;
+}
+.edit-row input:focus,
+.edit-row select:focus,
+.edit-type:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.18);
+}
+.edit-type {
+  flex: 0 0 auto;
+  width: 84px;
+}
+.edit-mini {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 3px 8px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+}
+.edit-mini:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.edit-mini:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.edit-mini.ghost {
+  color: var(--muted);
+}
+.edit-add-btn {
+  width: 100%;
+  margin: 4px 0 12px;
+  padding: 7px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent);
+  font-weight: 600;
+  cursor: pointer;
+}
+.edit-add-btn:hover {
+  background: var(--surface-2);
+}
+.edit-add {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 12px;
+  background: var(--surface-2);
+}
+.edit-add-head {
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.edit-add-custom {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.edit-add-custom .edit-k-input {
+  flex: 1;
+}
+.edit-add-std {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 180px;
+  overflow: auto;
+}
+.edit-std-item {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 4px 8px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  color: var(--text);
+}
+.edit-std-item:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.edit-std-count {
+  color: var(--muted);
+}
+.edit-hint {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.edit-actions {
+  display: flex;
+  gap: 8px;
+  position: sticky;
+  bottom: 0;
+  padding-top: 8px;
+  background: var(--surface);
+}
+.edit-actions .btn {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 0.88rem;
+}
+
+/* Top-bar "Descarcă" button (appears only when the IFC has edits) */
+.dl-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 6px 12px 6px 11px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.dl-btn:hover {
+  filter: brightness(1.06);
+}
+.dl-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--on-accent);
+  color: var(--accent);
+  font-size: 0.74rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
 
 /* Property accordion */
 .pacc {
@@ -1252,6 +1458,23 @@ table.summary td.k {
 .pacc-table td.pacc-starcell {
   width: 18px;
   padding-right: 0;
+}
+/* "editat" badge on a property/attribute with a pending edit */
+.pacc-edited {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.16);
+  color: var(--accent);
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+}
+.pacc-edited-row td {
+  background: rgba(var(--accent-rgb), 0.05);
 }
 /* Per-row favorite toggle */
 .pacc-star {

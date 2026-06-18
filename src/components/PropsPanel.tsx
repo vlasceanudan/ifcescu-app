@@ -3,6 +3,8 @@ import { useState } from "react";
 export interface PropRow {
   k: string;
   v: string;
+  /** True when this property/attribute has a pending edit (shows an "editat" badge). */
+  edited?: boolean;
 }
 export interface PropGroup {
   name: string;
@@ -172,9 +174,12 @@ export function PropAccordion({ groups, favorites, onToggleFavorite }: Props) {
     <table className="pacc-table">
       <tbody>
         {rs.map((r, i) => (
-          <tr key={i}>
+          <tr key={i} className={r.edited ? "pacc-edited-row" : undefined}>
             <td className="pacc-starcell">{star(r.k)}</td>
-            <td className="k">{r.k}</td>
+            <td className="k">
+              {r.edited && <span className="pacc-edited" title="Modificat (nesalvat în fișier)">editat</span>}
+              {r.k}
+            </td>
             <td>{r.v}</td>
           </tr>
         ))}

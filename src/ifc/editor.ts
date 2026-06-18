@@ -1,37 +1,22 @@
 // Client-side IFC reader/editor/writer built on @ifc-lite (parser + mutations + export).
 //
-// Replaces the previous web-ifc 0.0.39 implementation. The public IfcEditor
-// interface is unchanged so EditorForm/App keep working. Edits accumulate in an
+// Edits (attributes, property/quantity values, new property sets) accumulate in an
 // @ifc-lite MutablePropertyView overlay and materialise at export() via StepExporter,
-// which is natively non-destructive (POC: 100% of untouched lines + full Stereo 70
-// precision preserved, no malformed reals) — so the old "splice" hack is gone.
+// which is natively non-destructive (untouched STEP lines + full numeric precision
+// preserved). One IfcEditor wraps ONE model store; the 3D viewer keeps one per
+// federated model (see Viewer.modelEditorsRef).
 import {
   extractGeoreferencingOnDemand,
   extractRootAttributesFromEntity,
   getRawNamedAttributes,
-  getAllAttributesForEntity,
-  deterministicGlobalId,
   type IfcDataStore,
 } from "@ifc-lite/parser";
+import { IFC_ENTITY_NAMES } from "@ifc-lite/data";
+import { PropertyValueType, QuantityType } from "@ifc-lite/data";
 import { MutablePropertyView } from "@ifc-lite/mutations";
 import { StepExporter } from "@ifc-lite/export";
 import { parseStore, detectSchema, type IfcSchema } from "./store";
-import { STEREO70, BENEFICIAR_REL_NAME } from "./constants";
 
-export interface ProjectInfo {
-  expressID: number;
-  name: string;
-  longName: string;
-}
-export interface SiteInfo {
-  expressID: number;
-  name: string;
-  globalId: string;
-}
-export interface BeneficiarInfo {
-  name: string;
-  isOrg: boolean;
-}
 export interface GeorefInfo {
   /** Projected CRS name, e.g. "EPSG:3844". */
   crsName: string;
@@ -47,16 +32,51 @@ export interface GeorefInfo {
   scale: number;
 }
 
-/** Zero-based index of a named attribute in an entity's STEP argument list. */
-function attrIndex(type: string, name: string): number {
-  return getAllAttributesForEntity(type).findIndex((a) => a.name === name);
+// --- editable selection (the in-3D edit panel) ----------------------------
+export type EditGroupKind = "attribute" | "pset" | "quantity";
+
+export interface EditRow {
+  /** Property/quantity/attribute name (the real IFC name, used for mutations). */
+  name: string;
+  /** Current value, stringified for the input (enum values are shown without dots). */
+  value: string;
+  /** Property value type (pset rows) — drives the mutation's typing. */
+  propType?: PropertyValueType;
+  /** Quantity type (quantity rows). */
+  qtyType?: QuantityType;
+  unit?: string;
+  /** Read-only rows (e.g. GlobalId) are shown but not editable. */
+  readonly?: boolean;
+  /** Enum-valued attribute (e.g. PredefinedType) — edited as a dropdown. */
+  isEnum?: boolean;
+  /** True when this row has a pending edit (shown with an "editat" badge). */
+  edited?: boolean;
 }
 
-/** Build a full positional STEP attribute array for a NEW entity, by attribute name. */
-function buildAttrs(type: string, values: Record<string, unknown>): (string | number | boolean | null)[] {
-  return getAllAttributesForEntity(type).map((a) =>
-    a.name in values ? (values[a.name] as any) : null,
-  );
+export interface EditGroup {
+  kind: EditGroupKind;
+  /** "Atribute" for the attribute group, else the pset / qset name. */
+  name: string;
+  rows: EditRow[];
+}
+
+export interface SelectionDetail {
+  header: { name: string; type: string };
+  /** Raw uppercase IFC type, e.g. "IFCWALL" (for standard-pset lookups). */
+  ifcClass: string;
+  groups: EditGroup[];
+}
+
+/** IfcRoot attributes we expose for editing (in order). */
+const EDITABLE_ATTRS = ["Name", "Description", "ObjectType", "Tag"] as const;
+
+/** Canonical PascalCase IFC type name ("IFCWALL" → "IfcWall"). */
+function prettyType(type: string): string {
+  if (!type) return "";
+  const hit = IFC_ENTITY_NAMES[type.toUpperCase()];
+  if (hit) return hit;
+  const rest = type.replace(/^IFC/i, "");
+  return "Ifc" + rest.charAt(0).toUpperCase() + rest.slice(1).toLowerCase();
 }
 
 /** Read a named raw attribute (entity refs come back as numbers, lists as number[]). */
@@ -65,35 +85,33 @@ function rawAttr(entity: any, name: string): unknown {
   return hit ? hit.raw : null;
 }
 
+const str = (v: unknown) => (v == null ? "" : String(v));
+
 export class IfcEditor {
   private view: MutablePropertyView;
-  private schemaName: IfcSchema;
-  private georefExact: GeorefInfo | null = null;
-  private beneficiarCache: BeneficiarInfo | null = null;
-  /** Project Name/LongName edits, surfaced by getProject before re-export. */
-  private projectAttrCache: { name?: string; longName?: string } = {};
-  /** Sites created this session (overlay entities, not yet in the store index). */
-  private createdSites: SiteInfo[] = [];
 
   private constructor(
     private store: IfcDataStore,
-    bytes: Uint8Array,
+    private schemaName: IfcSchema,
   ) {
-    this.schemaName = detectSchema(bytes);
     this.view = new MutablePropertyView(null, "0");
     this.view.setExpressIdWatermark(this.maxExpressId());
-    // Wire base reads so getPropertyValue returns existing + mutated values.
+    // Wire base reads so getPropertyValue / getForEntity return existing + mutated values.
     this.view.setOnDemandExtractor((id) => (this.store as any).getProperties(id) ?? []);
+    this.view.setQuantityExtractor?.((id: number) => (this.store as any).getQuantities(id) ?? []);
   }
 
+  /** Parse bytes and wrap the resulting store. */
   static async open(bytes: Uint8Array): Promise<IfcEditor> {
     const store = await parseStore(bytes);
-    return new IfcEditor(store, bytes);
+    return new IfcEditor(store, detectSchema(bytes));
   }
 
-  private idsOfType(type: string): number[] {
-    return this.store.entityIndex.byType.get(type) ?? [];
+  /** Wrap an already-parsed store (the 3D engine parses each federated model). */
+  static fromStore(store: IfcDataStore, schema: IfcSchema): IfcEditor {
+    return new IfcEditor(store, schema);
   }
+
   private getEntity(id: number): any {
     return (this.store as any).getEntity(id);
   }
@@ -105,164 +123,117 @@ export class IfcEditor {
     return m;
   }
 
-  schema(): string {
+  schema(): IfcSchema {
     return this.schemaName;
   }
-  /** No-op kept for API compatibility (no web-ifc model handle to close). */
+  /** No-op kept for API compatibility. */
   close(): void {}
 
-  // --- project ------------------------------------------------------------
-  getProject(): ProjectInfo | null {
-    const ids = this.idsOfType("IFCPROJECT");
-    if (!ids.length) return null;
-    const e = this.getEntity(ids[0]);
-    const root = extractRootAttributesFromEntity(e);
-    const longRaw = rawAttr(e, "LongName");
+  /** True when any mutation has been recorded. */
+  hasChanges(): boolean {
+    return this.view.hasChanges();
+  }
+
+  /** Number of DISTINCT things changed (an attribute/property/set edited twice
+   *  counts once), not the raw mutation-operation count. */
+  changeCount(): number {
+    const keys = new Set<string>();
+    for (const m of this.view.getMutations()) {
+      const k =
+        m.type === "UPDATE_ATTRIBUTE" || m.type === "UPDATE_POSITIONAL_ATTRIBUTE"
+          ? `a:${m.entityId}:${m.attributeName ?? ""}`
+          : m.type === "CREATE_PROPERTY_SET" || m.type === "DELETE_PROPERTY_SET"
+            ? `s:${m.entityId}:${m.psetName ?? ""}`
+            : `p:${m.entityId}:${m.psetName ?? ""}:${m.propName ?? ""}`;
+      keys.add(k);
+    }
+    return keys.size;
+  }
+
+  // --- selection read (edit panel) ----------------------------------------
+  /** Structured, view-aware read of an element so saved edits show immediately. */
+  getSelection(id: number): SelectionDetail {
+    const e = this.getEntity(id);
+    const root = e ? extractRootAttributesFromEntity(e) : { name: "", globalId: "" };
+
+    // Overlay attribute edits + track which rows were edited (for "editat" badges).
+    const overlay = new Map<string, string>();
+    const editedAttrs = new Set<string>();   // attribute names
+    const editedKeys = new Set<string>();    // `${set}::${name}` (props + quantities)
+    const createdSets = new Set<string>();   // whole new property sets
+    for (const m of this.view.getMutationsForEntity(id)) {
+      if (m.type === "UPDATE_ATTRIBUTE" && m.attributeName) {
+        overlay.set(m.attributeName, str(m.newValue));
+        editedAttrs.add(m.attributeName);
+      } else if (m.type === "CREATE_PROPERTY_SET" && m.psetName) {
+        createdSets.add(m.psetName);
+      } else if (m.psetName && m.propName) {
+        editedKeys.add(`${m.psetName}::${m.propName}`);
+      }
+    }
+    const attrVal = (name: string): string =>
+      overlay.has(name) ? overlay.get(name)! : str(name === "Name" ? root.name : rawAttr(e, name));
+
+    const groups: EditGroup[] = [];
+    const attrRows: EditRow[] = EDITABLE_ATTRS.map((n) => ({ name: n, value: attrVal(n), edited: editedAttrs.has(n) }));
+    // PredefinedType (enum) only when the entity's class actually declares it.
+    if (e && getRawNamedAttributes(e).some((p) => p.name === "PredefinedType")) {
+      const noDots = attrVal("PredefinedType").replace(/^\./, "").replace(/\.$/, "");
+      attrRows.push({ name: "PredefinedType", value: noDots, isEnum: true, edited: editedAttrs.has("PredefinedType") });
+    }
+    attrRows.push({ name: "GlobalId", value: str(root.globalId), readonly: true });
+    groups.push({ kind: "attribute", name: "Atribute", rows: attrRows });
+
+    for (const set of this.view.getForEntity(id)) {
+      const psetNew = createdSets.has(set.name);
+      const rows: EditRow[] = set.properties
+        .filter((p) => p.name)
+        .map((p) => ({ name: p.name, value: str(p.value), propType: p.type, unit: p.unit, edited: psetNew || editedKeys.has(`${set.name}::${p.name}`) }));
+      groups.push({ kind: "pset", name: set.name || "PropertySet", rows });
+    }
+    for (const set of this.view.getQuantitiesForEntity(id)) {
+      const rows: EditRow[] = set.quantities
+        .filter((q) => q.name)
+        .map((q) => ({ name: q.name, value: str(q.value), qtyType: q.type, unit: q.unit, edited: editedKeys.has(`${set.name}::${q.name}`) }));
+      groups.push({ kind: "quantity", name: set.name || "Qto", rows });
+    }
+
     return {
-      expressID: ids[0],
-      name: this.projectAttrCache.name ?? root.name ?? "",
-      longName: this.projectAttrCache.longName ?? (longRaw != null ? String(longRaw) : ""),
+      header: { name: attrVal("Name"), type: prettyType(e?.type ?? "") },
+      ifcClass: (e?.type ?? "").toUpperCase(),
+      groups,
     };
   }
 
-  setProject(name: string, longName: string): void {
-    const ids = this.idsOfType("IFCPROJECT");
-    if (!ids.length) return;
-    const projId = ids[0];
-    this.view.setAttribute(projId, "Name", name);
-    const li = attrIndex("IfcProject", "LongName");
-    if (li >= 0) this.view.setPositionalAttribute(projId, li, longName);
-    this.projectAttrCache = { name, longName };
+  // --- edits --------------------------------------------------------------
+  setRootAttribute(id: number, name: string, value: string): void {
+    this.view.setAttribute(id, name, value);
   }
-
-  // --- sites --------------------------------------------------------------
-  getSites(): SiteInfo[] {
-    const stored = this.idsOfType("IFCSITE").map((id) => {
-      const root = extractRootAttributesFromEntity(this.getEntity(id));
-      return { expressID: id, name: root.name ?? "", globalId: root.globalId ?? "" };
-    });
-    return [...stored, ...this.createdSites];
+  setProperty(id: number, pset: string, prop: string, value: string, type: PropertyValueType = PropertyValueType.Text): void {
+    this.view.setProperty(id, pset, prop, value, type);
   }
-
-  /**
-   * Create a new IfcSite and aggregate it under the IfcProject (so land/address
-   * psets have somewhere to attach). Allocated immediately so the caller can
-   * attach property sets to the returned expressID; both materialise at export.
-   */
-  createSite(name = "Teren"): SiteInfo | null {
-    const projIds = this.idsOfType("IFCPROJECT");
-    if (!projIds.length) return null;
-
-    const guid = deterministicGlobalId(`site:${name}:${projIds[0]}`);
-    const site = this.view.createEntity(
-      "IfcSite",
-      buildAttrs("IfcSite", { GlobalId: guid, Name: name, CompositionType: ".ELEMENT." }),
-    );
-    const relGuid = deterministicGlobalId(`agg:${site.expressId}`);
-    this.view.createEntity(
-      "IfcRelAggregates",
-      buildAttrs("IfcRelAggregates", {
-        GlobalId: relGuid,
-        RelatingObject: `#${projIds[0]}`,
-        RelatedObjects: [`#${site.expressId}`],
-      }),
-    );
-    const info = { expressID: site.expressId, name, globalId: guid };
-    this.createdSites.push(info);
-    return info;
-  }
-
-  // --- property sets ------------------------------------------------------
-  getPsetValue(productID: number, psetName: string, prop: string): string {
-    const v = this.view.getPropertyValue(productID, psetName, prop);
-    return v == null ? "" : String(v);
-  }
-
-  /** Create or update a single property inside a named PSet (upsert). */
-  setPsetValue(productID: number, psetName: string, prop: string, value: string): void {
-    this.view.setProperty(productID, psetName, prop, value);
-  }
-
-  // --- beneficiary --------------------------------------------------------
-  private findBeneficiarRel(): { id: number; entity: any } | null {
-    for (const id of this.idsOfType("IFCRELASSIGNSTOACTOR")) {
-      const e = this.getEntity(id);
-      if (String(rawAttr(e, "Name") ?? "") === BENEFICIAR_REL_NAME) return { id, entity: e };
-    }
-    return null;
-  }
-
-  getBeneficiar(): BeneficiarInfo | null {
-    if (this.beneficiarCache) return this.beneficiarCache;
-    const rel = this.findBeneficiarRel();
-    if (!rel) return null;
-    const actorRef = rawAttr(rel.entity, "RelatingActor");
-    if (typeof actorRef !== "number") return null;
-    const actor = this.getEntity(actorRef);
-    if (!actor) return null;
-    if (actor.type === "IFCORGANIZATION") return { name: String(rawAttr(actor, "Name") ?? ""), isOrg: true };
-    if (actor.type === "IFCPERSON") {
-      const name = [rawAttr(actor, "GivenName"), rawAttr(actor, "FamilyName")]
-        .filter((v) => v != null && v !== "")
-        .join(" ");
-      return { name, isOrg: false };
-    }
-    return null;
-  }
-
-  /**
-   * Set the project's beneficiary. Cached now and materialised at export()
-   * (create the actor; update an existing "Beneficiar" relationship in place, or
-   * create one) — so repeated calls never duplicate the relationship.
-   */
-  upsertBeneficiar(_projectID: number, name: string, isOrg: boolean): void {
-    this.beneficiarCache = { name, isOrg };
-  }
-
-  private materializeBeneficiar(): void {
-    if (!this.beneficiarCache) return;
-    const projIds = this.idsOfType("IFCPROJECT");
-    if (!projIds.length) return;
-    const { name, isOrg } = this.beneficiarCache;
-
-    let actorId: number;
-    if (isOrg) {
-      actorId = this.view.createEntity("IfcOrganization", buildAttrs("IfcOrganization", { Name: name })).expressId;
-    } else {
-      const parts = name.split(/\s+/).filter(Boolean);
-      const given = parts.shift() ?? "";
-      const family = parts.join(" ");
-      actorId = this.view.createEntity(
-        "IfcPerson",
-        buildAttrs("IfcPerson", { GivenName: given || null, FamilyName: family || null }),
-      ).expressId;
-    }
-
-    const existing = this.findBeneficiarRel();
-    if (existing) {
-      const ai = attrIndex("IfcRelAssignsToActor", "RelatingActor");
-      if (ai >= 0) this.view.setPositionalAttribute(existing.id, ai, `#${actorId}`);
-      return;
-    }
-    this.view.createEntity(
-      "IfcRelAssignsToActor",
-      buildAttrs("IfcRelAssignsToActor", {
-        GlobalId: deterministicGlobalId(`ben:${actorId}`),
-        Name: BENEFICIAR_REL_NAME,
-        RelatedObjects: [`#${projIds[0]}`],
-        RelatingActor: `#${actorId}`,
-      }),
+  createPropertySet(
+    id: number,
+    psetName: string,
+    properties: Array<{ name: string; value: string; type?: PropertyValueType }>,
+  ): void {
+    this.view.createPropertySet(
+      id,
+      psetName,
+      properties.map((p) => ({ name: p.name, value: p.value, type: p.type ?? PropertyValueType.Text })),
     );
   }
+  setQuantity(id: number, qset: string, name: string, value: number, qType: QuantityType = QuantityType.Length): void {
+    this.view.setQuantity(id, qset, name, value, qType);
+  }
 
-  // --- georeferencing -----------------------------------------------------
+  // --- georeferencing (read-only in the UI; kept for the globe + export) --
   /** True when the schema supports IfcMapConversion (IFC4 / IFC4x3, not IFC2x3). */
   supportsGeoref(): boolean {
     return this.schemaName !== "IFC2X3";
   }
 
   getGeoref(): GeorefInfo | null {
-    if (this.georefExact) return this.georefExact;
     const g = extractGeoreferencingOnDemand(this.store);
     if (!g?.mapConversion) return null;
     const mc = g.mapConversion;
@@ -278,93 +249,12 @@ export class IfcEditor {
     };
   }
 
-  /** Capture georef; applied at export (edit existing IfcMapConversion or create one). */
-  setGeoref(info: GeorefInfo): boolean {
-    if (!this.supportsGeoref()) return false;
-    this.georefExact = { ...info };
-    return true;
-  }
-
-  private materializeGeorefIfAbsent(): void {
-    if (!this.georefExact) return;
-    if (extractGeoreferencingOnDemand(this.store)?.mapConversion) return; // exists → handled via georefMutations
-    // No IfcMapConversion in the source: create IfcProjectedCRS + IfcMapConversion,
-    // tied to the 3D geometric representation context as SourceCRS.
-    const ctxId = this.modelContextID();
-    if (ctxId == null) return;
-    const g = this.georefExact;
-    const theta = (g.rotationDeg * Math.PI) / 180;
-    const crsId = this.view.createEntity(
-      "IfcProjectedCRS",
-      buildAttrs("IfcProjectedCRS", {
-        Name: g.crsName || STEREO70.name,
-        Description: STEREO70.description,
-        GeodeticDatum: STEREO70.geodeticDatum,
-        VerticalDatum: STEREO70.verticalDatum,
-        MapProjection: STEREO70.mapProjection,
-      }),
-    ).expressId;
-    this.view.createEntity(
-      "IfcMapConversion",
-      buildAttrs("IfcMapConversion", {
-        SourceCRS: `#${ctxId}`,
-        TargetCRS: `#${crsId}`,
-        Eastings: g.eastings,
-        Northings: g.northings,
-        OrthogonalHeight: g.height,
-        XAxisAbscissa: Math.cos(theta),
-        XAxisOrdinate: Math.sin(theta),
-        Scale: g.scale,
-      }),
-    );
-  }
-
-  private modelContextID(): number | null {
-    const ids = this.idsOfType("IFCGEOMETRICREPRESENTATIONCONTEXT");
-    let fallback: number | null = null;
-    for (const id of ids) {
-      const e = this.getEntity(id);
-      if (e?.type !== "IFCGEOMETRICREPRESENTATIONCONTEXT") continue; // skip subcontexts
-      if (fallback == null) fallback = id;
-      if (String(rawAttr(e, "ContextType") ?? "") === "Model") return id;
-    }
-    return fallback;
-  }
-
   // --- export -------------------------------------------------------------
   /**
-   * Export the enriched model via @ifc-lite/export (non-destructive: untouched
-   * STEP lines preserved, full numeric precision, no malformed reals — proven by
-   * the POC). Mutations (attributes, psets, new site/beneficiary, georef) apply here.
+   * Export the edited model via @ifc-lite/export (non-destructive: untouched STEP
+   * lines preserved, full numeric precision). All overlay mutations apply here.
    */
   export(): Uint8Array {
-    this.materializeBeneficiar();
-    this.materializeGeorefIfAbsent();
-
-    const hasExistingGeoref = !!extractGeoreferencingOnDemand(this.store)?.mapConversion;
-    const g = this.georefExact;
-    const theta = g ? (g.rotationDeg * Math.PI) / 180 : 0;
-    const georefMutations =
-      g && hasExistingGeoref
-        ? {
-            projectedCRS: {
-              name: g.crsName || STEREO70.name,
-              description: STEREO70.description,
-              geodeticDatum: STEREO70.geodeticDatum,
-              verticalDatum: STEREO70.verticalDatum,
-              mapProjection: STEREO70.mapProjection,
-            },
-            mapConversion: {
-              eastings: g.eastings,
-              northings: g.northings,
-              orthogonalHeight: g.height,
-              xAxisAbscissa: Math.cos(theta),
-              xAxisOrdinate: Math.sin(theta),
-              scale: g.scale,
-            },
-          }
-        : undefined;
-
     const result = new StepExporter(this.store, this.view).export({
       schema: this.schemaName,
       includeGeometry: true,
@@ -372,7 +262,6 @@ export class IfcEditor {
       includeQuantities: true,
       includeRelationships: true,
       applyMutations: true,
-      georefMutations,
     });
     return result.content;
   }

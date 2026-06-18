@@ -1,15 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { IfcParser, getRawNamedAttributes } from "@ifc-lite/parser";
+import { PropertyValueType } from "@ifc-lite/data";
 import { IfcEditor } from "../src/ifc/editor";
 
-// Minimal, self-contained IFC4 model: an IfcProject with a geometric context
-// and units, but deliberately NO IfcSite. Exercises the "add IfcSite" path
-// that unblocks files which would otherwise fail with "Nu s-a găsit niciun
-// IfcSite în model.".
-const NO_SITE_IFC = `ISO-10303-21;
+// Minimal, self-contained IFC4 model (an IfcProject + context + units). Lets the
+// editing round-trip run in CI without an external sample. We edit the IfcProject
+// itself (it's an IfcRoot / IfcObject, so it accepts attribute + property edits).
+const TINY_IFC = `ISO-10303-21;
 HEADER;
 FILE_DESCRIPTION((''),'2;1');
-FILE_NAME('no-site.ifc','2026-01-01T00:00:00',(''),(''),'','','');
+FILE_NAME('tiny.ifc','2026-01-01T00:00:00',(''),(''),'','','');
 FILE_SCHEMA(('IFC4'));
 ENDSEC;
 DATA;
@@ -23,53 +22,31 @@ ENDSEC;
 END-ISO-10303-21;
 `;
 
-describe("IfcEditor.createSite", () => {
-  it("adds an IfcSite to a site-less model; it survives export+reopen and edits", async () => {
-    const bytes = new TextEncoder().encode(NO_SITE_IFC);
+const valueOf = (ed: IfcEditor, id: number, group: string, name: string): string | undefined =>
+  ed.getSelection(id).groups.find((g) => g.name === group)?.rows.find((r) => r.name === name)?.value;
+
+describe("IfcEditor inline round-trip", () => {
+  it("edits an attribute + property + new pset on a tiny model; survives export+reopen", async () => {
+    const bytes = new TextEncoder().encode(TINY_IFC);
     const ed = await IfcEditor.open(bytes);
+    expect(ed.hasChanges()).toBe(false);
 
-    expect(ed.getProject()).toBeTruthy();
-    expect(ed.getSites().length).toBe(0);
-
-    const created = ed.createSite("Teren");
-    expect(created).toBeTruthy();
-    expect(created!.name).toBe("Teren");
-
-    // The new site is now visible and editable in-memory.
-    const sites = ed.getSites();
-    expect(sites.length).toBe(1);
-    ed.setPsetValue(sites[0].expressID, "PSet_LandRegistration", "LandTitleID", "CF-777");
+    const PROJECT_ID = 1;
+    ed.setRootAttribute(PROJECT_ID, "Name", "Proiect Nou");
+    ed.setProperty(PROJECT_ID, "Pset_Test", "MyProp", "hello", PropertyValueType.Text);
+    ed.createPropertySet(PROJECT_ID, "Pset_Custom", [
+      { name: "Code", value: "ABC-123", type: PropertyValueType.Identifier },
+    ]);
+    expect(ed.hasChanges()).toBe(true);
+    expect(valueOf(ed, PROJECT_ID, "Atribute", "Name")).toBe("Proiect Nou");
 
     const out = ed.export();
     ed.close();
 
-    // Reopen the exported file: the site, its GlobalId, and the pset persist.
     const ed2 = await IfcEditor.open(out);
-    const sites2 = ed2.getSites();
-    expect(sites2.length).toBe(1);
-    expect(sites2[0].name).toBe("Teren");
-    expect(sites2[0].globalId).toBe(created!.globalId);
-    expect(ed2.getPsetValue(sites2[0].expressID, "PSet_LandRegistration", "LandTitleID")).toBe(
-      "CF-777",
-    );
-
-    // The site is wired into the spatial tree via IfcProject -> IfcRelAggregates.
-    const store = await new IfcParser().parseColumnar(
-      out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer,
-    );
-    const projId = ed2.getProject()!.expressID;
-    let linked = false;
-    for (const id of store.entityIndex.byType.get("IFCRELAGGREGATES") ?? []) {
-      const e = (store as any).getEntity(id);
-      const named = getRawNamedAttributes(e);
-      const relating = named.find((p) => p.name === "RelatingObject")?.raw;
-      const related = named.find((p) => p.name === "RelatedObjects")?.raw;
-      if (relating === projId && Array.isArray(related) && related.includes(sites2[0].expressID)) {
-        linked = true;
-      }
-    }
-    expect(linked).toBe(true);
-
+    expect(valueOf(ed2, PROJECT_ID, "Atribute", "Name")).toBe("Proiect Nou");
+    expect(valueOf(ed2, PROJECT_ID, "Pset_Test", "MyProp")).toBe("hello");
+    expect(valueOf(ed2, PROJECT_ID, "Pset_Custom", "Code")).toBe("ABC-123");
     ed2.close();
   });
 });

@@ -1,10 +1,9 @@
 import { useMemo, useRef, useState } from "react";
 import { useTheme } from "./hooks/useTheme";
 import { IfcEditor } from "./ifc/editor";
-import type { ProjectInfo, SiteInfo, BeneficiarInfo, GeorefInfo } from "./ifc/editor";
+import type { GeorefInfo } from "./ifc/editor";
 import { Header } from "./components/Header";
 import { UploadPanel } from "./components/UploadPanel";
-import { EditorForm } from "./components/EditorForm";
 import { Viewer } from "./components/Viewer";
 import { GlobeViewer } from "./components/GlobeViewer";
 import type { IDSValidationReport } from "./ifc/ids";
@@ -12,9 +11,6 @@ import type { BCFProject } from "./ifc/bcf";
 
 interface Loaded {
   editor: IfcEditor;
-  project: ProjectInfo;
-  sites: SiteInfo[];
-  beneficiar: BeneficiarInfo | null;
   georef: GeorefInfo | null;
   bytes: Uint8Array;
   fileName: string;
@@ -28,11 +24,10 @@ interface ExtraModel {
 }
 
 /** Small line icons for the top-bar tabs. */
-function TabIcon({ kind }: { kind: "view" | "globe" | "edit" }) {
+function TabIcon({ kind }: { kind: "view" | "globe" }) {
   const a = { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
   if (kind === "view") return <svg {...a}><path d="M12 2l9 5v10l-9 5-9-5V7z" /><path d="M12 12l9-5M12 12v10M12 12L3 7" /></svg>;
-  if (kind === "globe") return <svg {...a}><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg>;
-  return <svg {...a}><path d="M14 3v4a1 1 0 0 0 1 1h4" /><path d="M5 3h9l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" /><path d="M8 13h8M8 17h5" /></svg>;
+  return <svg {...a}><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg>;
 }
 
 export default function App() {
@@ -40,7 +35,9 @@ export default function App() {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<"edit" | "view" | "globe">("view");
+  const [tab, setTab] = useState<"view" | "globe">("view");
+  // Number of edits made to the primary IFC (drives the top-bar download button).
+  const [changeCount, setChangeCount] = useState(0);
   // Favorited property names for the 3D viewer's property panel. Owned here so a
   // new import resets them (they belong to the currently loaded model).
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
@@ -66,23 +63,13 @@ export default function App() {
     setIdsReport(null);
     setBcfProject(null);
     setExtraModels([]); // federated models belonged to the previous session
+    setChangeCount(0); // edits belonged to the previous model
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
+      // The primary model's editor lives here so edits + the download button
+      // survive tab switches. The 3D viewer edits this same editor instance.
       const editor = await IfcEditor.open(bytes);
-      const project = editor.getProject();
-      if (!project) throw new Error("Nu există niciun IfcProject în model.");
-      // A missing IfcSite no longer blocks loading — the user can add one from
-      // the editor (the "Teren" card offers an "Adaugă IfcSite" button).
-      const sites = editor.getSites();
-      setLoaded({
-        editor,
-        project,
-        sites,
-        beneficiar: editor.getBeneficiar(),
-        georef: editor.getGeoref(),
-        bytes,
-        fileName: file.name,
-      });
+      setLoaded({ editor, georef: editor.getGeoref(), bytes, fileName: file.name });
       setTab("view");
     } catch (e: any) {
       setError("Nu am putut citi fișierul ca IFC valid. " + (e?.message ? `(${e.message})` : ""));
@@ -91,19 +78,28 @@ export default function App() {
     }
   };
 
-  const addSite = () => {
-    if (!loaded) return;
-    const site = loaded.editor.createSite();
-    if (!site) return;
-    setLoaded({ ...loaded, sites: [...loaded.sites, site] });
-  };
-
   // Federation: add/remove non-primary models (3D viewer only).
   const onAddModel = async (file: File) => {
     const bytes = new Uint8Array(await file.arrayBuffer());
     setExtraModels((p) => [...p, { id: `extra-${++extraSeq.current}`, bytes, fileName: file.name }]);
   };
   const onRemoveModel = (id: string) => setExtraModels((p) => p.filter((m) => m.id !== id));
+
+  // Download the primary model with its edits applied (non-destructive export).
+  const downloadEdited = () => {
+    if (!loaded) return;
+    const out = loaded.editor.export();
+    const base = loaded.fileName.replace(/\.ifc$/i, "");
+    const blob = new Blob([out as BlobPart], { type: "application/x-step" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${base}-editat.ifc`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
 
   // The uniform model list the 3D viewer federates (primary first).
   const viewerModels = useMemo(
@@ -130,13 +126,17 @@ export default function App() {
             <button className={"tab" + (tab === "globe" ? " active" : "")} onClick={() => setTab("globe")}>
               <TabIcon kind="globe" /><span>Glob 3D</span>
             </button>
-            <button className={"tab" + (tab === "edit" ? " active" : "")} onClick={() => setTab("edit")}>
-              <TabIcon kind="edit" /><span>Date</span>
-            </button>
           </nav>
         )}
 
         <div className="topbar-right">
+          {loaded && changeCount > 0 && (
+            <button className="dl-btn" onClick={downloadEdited} title="Descarcă IFC-ul cu modificările aplicate">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" /></svg>
+              <span>Descarcă</span>
+              <span className="dl-count">{changeCount}</span>
+            </button>
+          )}
           {loaded && <UploadPanel onFile={onFile} variant="button" />}
           <button className="theme-toggle" onClick={toggleTheme} title={theme === "dark" ? "Mod luminos" : "Mod întunecat"}>
             {theme === "dark" ? (
@@ -159,24 +159,10 @@ export default function App() {
           </div>
         )}
 
-        {loaded && tab === "edit" && (
-          <div className="editor-scroll">
-            <div className="editor-col">
-              <EditorForm
-                editor={loaded.editor}
-                project={loaded.project}
-                sites={loaded.sites}
-                beneficiar={loaded.beneficiar}
-                fileName={loaded.fileName}
-                onAddSite={addSite}
-                onGeorefChange={(georef) => setLoaded((prev) => (prev ? { ...prev, georef } : prev))}
-              />
-            </div>
-          </div>
-        )}
-
         {loaded && tab === "view" && (
           <Viewer
+            editor={loaded.editor}
+            onChangeCount={setChangeCount}
             bytes={loaded.bytes}
             fileName={loaded.fileName}
             theme={theme}

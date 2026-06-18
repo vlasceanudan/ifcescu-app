@@ -2,7 +2,9 @@ import { type ReactNode, type CSSProperties, type MouseEvent as ReactMouseEvent,
 import type { IfcDataStore } from "@ifc-lite/parser";
 import type { Theme } from "../hooks/useTheme";
 import type { GeorefInfo } from "../ifc/editor";
-import { detectSchema } from "../ifc/store";
+import { detectSchema, type IfcSchema } from "../ifc/store";
+import { IfcEditor, type SelectionDetail } from "../ifc/editor";
+import { EditPanel } from "./EditPanel";
 import { ViewerEngine } from "../viewer/engine";
 import { buildTree, buildClassTree, buildMaterialTree, getSelectionProps, gatherFileInfo, offsetTree, modelRootNode } from "../viewer/model";
 import { MeasureTool, type MeasureMode } from "../viewer/measure";
@@ -22,6 +24,10 @@ import { createBCFFromIDSReport, addTopicToProject, type BCFProject } from "../i
 const IDS_FAIL_COLOR: [number, number, number, number] = [0.85, 0.13, 0.13, 1];
 
 interface Props {
+  /** The primary model's editor (owned by App so edits survive tab switches). */
+  editor: IfcEditor;
+  /** Report the primary IFC's change count up to App (drives the download button). */
+  onChangeCount: (n: number) => void;
   bytes: Uint8Array;
   fileName: string;
   theme: Theme;
@@ -127,7 +133,7 @@ function VisIcon({ kind }: { kind: "hide" | "isolate" | "frame" | "show" }) {
   }
 }
 
-export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavorite, bcfProject, onBcfProject, idsReport, onIdsReport, models, onAddModel, onRemoveModel }: Props) {
+export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, favorites, onToggleFavorite, bcfProject, onBcfProject, idsReport, onIdsReport, models, onAddModel, onRemoveModel }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -145,10 +151,12 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
 
   // Federation: per-model store registry (keyed by model id) + which models are
   // loaded in the engine + per-model visibility (hidden global ids and ids set).
-  const modelStoresRef = useRef<Map<string, { store: IfcDataStore; offset: number; localIDs: number[]; globalIDs: number[]; fileName: string }>>(new Map());
+  const modelStoresRef = useRef<Map<string, { store: IfcDataStore; offset: number; localIDs: number[]; globalIDs: number[]; fileName: string; schema: IfcSchema }>>(new Map());
   const loadedModelIdsRef = useRef<Set<string>>(new Set());
   const hiddenModelsRef = useRef<Set<string>>(new Set());
   const modelHiddenRef = useRef<Set<number>>(new Set());
+  // The owning model + local id of the (single) current selection, for editing.
+  const editTargetRef = useRef<{ modelId: string; localId: number } | null>(null);
 
   // Status is tracked (drives nothing visible now — the overlay was removed) but
   // kept so the existing setStatus call sites stay valid.
@@ -169,6 +177,11 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
   const [propsKey, setPropsKey] = useState(0);
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [selHeader, setSelHeader] = useState<{ name: string; type: string } | null>(null);
+  // In-3D editing: edit mode on/off + the structured snapshot the EditPanel renders.
+  const [editing, setEditing] = useState(false);
+  const [editDetail, setEditDetail] = useState<SelectionDetail | null>(null);
+  // Only the primary model is editable; its id (federation offset 0).
+  const primaryId = useMemo(() => models.find((m) => m.primary)?.id ?? models[0]?.id, [models]);
   const [propsWidth, setPropsWidth] = useState(340);
   const [treeWidth, setTreeWidth] = useState(300);
   // Vertical size of the "Modele" panel. null = auto (CSS-capped at 40%); once the
@@ -263,7 +276,7 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
         if (disposed) return;
         storeRef.current = store;
         allIDsRef.current = engine.allIDs;
-        modelStoresRef.current.set(primary.id, { store, offset, localIDs, globalIDs, fileName: primary.fileName });
+        modelStoresRef.current.set(primary.id, { store, offset, localIDs, globalIDs, fileName: primary.fileName, schema: detectSchema(primary.bytes) });
         loadedModelIdsRef.current.add(primary.id);
         setVisibleIds(new Set(engine.allIDs));
 
@@ -324,7 +337,7 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
         try {
           const { store, offset, localIDs, globalIDs } = await engine.addModel(m.id, m.bytes, m.fileName, { fitView: false });
           if (cancelled) return;
-          modelStoresRef.current.set(m.id, { store, offset, localIDs, globalIDs, fileName: m.fileName });
+          modelStoresRef.current.set(m.id, { store, offset, localIDs, globalIDs, fileName: m.fileName, schema: detectSchema(m.bytes) });
           loadedModelIdsRef.current.add(m.id);
         } catch (e) {
           console.error("Federare: nu am putut adăuga modelul", m.fileName, e);
@@ -474,21 +487,36 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
     };
   }
 
+  const isPrimary = (modelId: string) => modelId === primaryId;
+
   // --- selection ----------------------------------------------------------
   const selectIds = (ids: number[], expressID?: number) => {
     if (ids.length) lastHiddenRef.current = [];
     selectedRef.current = new Set(ids);
     setSelectedIds(new Set(ids));
     engineRef.current?.setSelectionOutline(ids);
+    // Selecting something new exits any active edit form.
+    setEditing(false);
+    setEditDetail(null);
     const propId = expressID ?? (ids.length === 1 ? ids[0] : undefined);
     // Route the global id back to its owning model's store for properties.
     const r = propId != null ? engineRef.current?.resolveGlobal(propId) : null;
     if (r) {
-      const { header, groups } = getSelectionProps(r.store, r.localId);
-      setSelHeader(header);
-      setPropGroups(groups);
+      editTargetRef.current = { modelId: r.modelId, localId: r.localId };
+      // Primary elements read through App's editor (mutation-aware, so applied
+      // edits persist on reselect). Federated models are view-only.
+      if (isPrimary(r.modelId)) {
+        const detail = editor.getSelection(r.localId);
+        setSelHeader(detail.header);
+        setPropGroups(detailToPropGroups(detail));
+      } else {
+        const { header, groups } = getSelectionProps(r.store, r.localId);
+        setSelHeader(header);
+        setPropGroups(groups);
+      }
       setPropsKey((k) => k + 1);
     } else {
+      editTargetRef.current = null;
       setPropGroups(null);
       setSelHeader(null);
     }
@@ -498,8 +526,38 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
     selectedRef.current = new Set();
     setSelectedIds(new Set());
     engineRef.current?.setSelectionOutline([]);
+    editTargetRef.current = null;
+    setEditing(false);
+    setEditDetail(null);
     setPropGroups(null);
     setSelHeader(null);
+  };
+
+  // --- editing (primary model only) ---------------------------------------
+  const canEditSelection = selectedIds.size === 1 && !!editTargetRef.current && isPrimary(editTargetRef.current.modelId);
+
+  const startEdit = () => {
+    const t = editTargetRef.current;
+    if (!t || !isPrimary(t.modelId)) return;
+    setEditDetail(editor.getSelection(t.localId));
+    setEditing(true);
+  };
+
+  const onEditSaved = () => {
+    const t = editTargetRef.current;
+    if (!t) return;
+    // Edits were applied to App's editor by the EditPanel; refresh + report.
+    const detail = editor.getSelection(t.localId);
+    setPropGroups(detailToPropGroups(detail));
+    setSelHeader(detail.header);
+    setEditing(false);
+    setEditDetail(null);
+    onChangeCount(editor.changeCount());
+  };
+
+  const exitEdit = () => {
+    setEditing(false);
+    setEditDetail(null);
   };
 
   // Rebuild the three per-model forests (one MODEL root per loaded model). Spatial
@@ -900,6 +958,16 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
                     {selHeader.type && <div className="sel-type">{selHeader.type}</div>}
                   </div>
                   <div className="sel-actions">
+                    <button
+                      className={"sel-btn" + (editing ? " active" : "")}
+                      title={editing ? "Închide editarea" : canEditSelection ? "Editează atribute și proprietăți" : "Editarea e disponibilă doar pe modelul principal ★"}
+                      disabled={!editing && !canEditSelection}
+                      onClick={() => (editing ? exitEdit() : startEdit())}
+                    >
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+                      </svg>
+                    </button>
                     <button className="sel-btn" title="Încadrează pe element" onClick={() => engineRef.current?.zoomToSelection(selectedRef.current)}>
                       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                         <circle cx="12" cy="12" r="4" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
@@ -913,7 +981,18 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
                   </div>
                 </div>
               )}
-              <PropAccordion key={propsKey} groups={propGroups} favorites={favorites} onToggleFavorite={onToggleFavorite} />
+              {editing && editDetail && editTargetRef.current ? (
+                <EditPanel
+                  editor={editor}
+                  id={editTargetRef.current.localId}
+                  detail={editDetail}
+                  schema={editor.schema()}
+                  onSaved={onEditSaved}
+                  onCancel={exitEdit}
+                />
+              ) : (
+                <PropAccordion key={propsKey} groups={propGroups} favorites={favorites} onToggleFavorite={onToggleFavorite} />
+              )}
             </>
           ) : fileInfo ? (
             <FileInfoPanel info={fileInfo} />
@@ -952,6 +1031,25 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
       )}
     </div>
   );
+}
+
+// Friendly labels for the IfcRoot attribute rows in the read-only panel.
+const ATTR_LABELS: Record<string, string> = {
+  Name: "Nume",
+  Description: "Descriere",
+  ObjectType: "Tip obiect",
+  Tag: "Etichetă",
+};
+
+// Flatten an editor's view-aware selection into the read-only PropAccordion shape
+// (so applied edits show in the non-edit panel too). GlobalId rows are kept.
+function detailToPropGroups(detail: SelectionDetail): PropGroup[] {
+  return detail.groups.map((g) => ({
+    name: g.kind === "attribute" ? "Atribute" : g.name,
+    rows: g.rows
+      .filter((r) => r.value.length)
+      .map((r) => ({ k: g.kind === "attribute" ? ATTR_LABELS[r.name] ?? r.name : r.name, v: r.value, edited: r.edited })),
+  })).filter((g) => g.rows.length);
 }
 
 // Ids of every node that starts open by default (mirrors IfcTree's per-node rule).
