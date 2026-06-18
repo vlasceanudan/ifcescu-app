@@ -60,8 +60,10 @@ export function buildTree(store: IfcDataStore, allIDs: Set<number>): TreeNode | 
         children: [],
       });
     }
-    const ids: number[] = [];
-    if (allIDs.has(node.expressId)) ids.push(node.expressId);
+    // The container itself is always selectable/editable (so non-geometric
+    // spatial entities — IfcProject/Site/Building/Storey/facilities — can have
+    // official properties added), followed by its renderable descendants.
+    const ids: number[] = [node.expressId];
     for (const c of children) ids.push(...c.ids);
     return {
       expressID: node.expressId,
@@ -266,7 +268,6 @@ export function gatherFileInfo(
     projectName,
     projectGlobalId,
     totalEntities: store.entityIndex.byId.size,
-    buildingStoreys: (byType.get("IFCBUILDINGSTOREY") ?? []).length,
     elementsWithGeometry,
     location,
   };

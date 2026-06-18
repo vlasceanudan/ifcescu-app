@@ -1,4 +1,4 @@
-# IFC Studio — web app
+# IFCescu — web app
 
 A fully client-side web app to **view and edit IFC models**: inspect them in an
 interactive 3D viewer, **edit element attributes and property/quantity values

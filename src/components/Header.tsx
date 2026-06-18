@@ -13,7 +13,7 @@ export function Header() {
         title="buildingSMART România"
         dangerouslySetInnerHTML={{ __html: logoRaw }}
       />
-      <span className="brand-name">IFC Studio</span>
+      <span className="brand-name">IFCescu</span>
     </div>
   );
 }

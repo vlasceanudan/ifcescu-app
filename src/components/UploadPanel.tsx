@@ -38,7 +38,7 @@ export function UploadPanel({ onFile, variant = "drop" }: Props) {
   return (
     <div className="upload-card">
       <div className="upload-icon">🧊</div>
-      <h2>IFC Studio</h2>
+      <h2>IFCescu</h2>
       <p className="upload-sub">Încărcați un fișier IFC pentru a-l vizualiza în 3D și a-i edita atributele și proprietățile.</p>
       <div
         className="dropzone"

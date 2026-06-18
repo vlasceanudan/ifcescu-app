@@ -1313,16 +1313,14 @@ table.summary td.k {
   background: var(--surface-2);
 }
 .edit-add-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-weight: 700;
   margin-bottom: 8px;
 }
-.edit-add-custom {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-.edit-add-custom .edit-k-input {
-  flex: 1;
+.edit-prop-picker {
+  max-width: 160px;
 }
 .edit-add-std {
   display: flex;

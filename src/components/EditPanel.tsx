@@ -64,14 +64,16 @@ const fromDetail = (detail: SelectionDetail): Group[] =>
 
 /**
  * In-place editor for one selected element: edit IfcRoot attributes, existing
- * property/quantity values, add properties, or add a whole property set (standard
- * class pset or custom). Save applies the diffs to the model's MutablePropertyView.
+ * property/quantity values, add official buildingSMART properties, or add a whole
+ * standard class pset. Save applies the diffs to the model's MutablePropertyView.
  */
 export function EditPanel({ editor, id, detail, schema, onSaved, onCancel }: Props) {
   const [groups, setGroups] = useState<Group[]>(() => fromDetail(detail));
   const [adding, setAdding] = useState(false);
   const [stdPsets, setStdPsets] = useState<readonly IfcPropertySetInfo[] | null>(null);
-  const [customName, setCustomName] = useState("");
+  // Full standard pset catalog (name → info), used both for the add-pset list and
+  // the per-pset official-property picker. Only buildingSMART psets/props are offered.
+  const [catalog, setCatalog] = useState<Map<string, IfcPropertySetInfo> | null>(null);
   // Allowed PredefinedType enum values for this element's class (schema lookup).
   const [predefValues, setPredefValues] = useState<string[]>([]);
 
@@ -79,8 +81,21 @@ export function EditPanel({ editor, id, detail, schema, onSaved, onCancel }: Pro
   useEffect(() => {
     setGroups(fromDetail(detail));
     setAdding(false);
-    setCustomName("");
   }, [detail]);
+
+  // Load the full standard pset catalog once per schema (keyed by pset name).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const all = await getPropertySets(schema);
+        if (!cancelled) setCatalog(new Map(all.map((p) => [p.name, p])));
+      } catch {
+        if (!cancelled) setCatalog(new Map());
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [schema]);
 
   // Load the class's PredefinedType enum values (for the dropdown).
   useEffect(() => {
@@ -103,20 +118,18 @@ export function EditPanel({ editor, id, detail, schema, onSaved, onCancel }: Pro
     [groups],
   );
 
-  // Standard psets applicable to this element's class + its supertypes.
+  // Standard psets applicable to this element's class + its supertypes — derived
+  // from the loaded catalog once the add-pset list is opened.
   useEffect(() => {
-    if (!adding || stdPsets) return;
+    if (!adding || stdPsets || !catalog) return;
     let cancelled = false;
     (async () => {
       try {
-        const [all, chain] = await Promise.all([
-          getPropertySets(schema),
-          getInheritanceChain(schema, detail.ifcClass),
-        ]);
+        const chain = await getInheritanceChain(schema, detail.ifcClass);
         const names = new Set<string>([detail.ifcClass.toUpperCase(), ...chain.map((e) => e.name.toUpperCase())]);
-        // Only true property sets — getPropertySets also returns Qto_* sets, which
+        // Only true property sets — the catalog also includes Qto_* sets, which
         // are quantities (computed), not something to add by hand.
-        const applicable = all.filter(
+        const applicable = [...catalog.values()].filter(
           (p) => !p.name.startsWith("Qto_") && p.applicableEntities.some((a) => names.has(a.toUpperCase())),
         );
         if (!cancelled) setStdPsets(applicable);
@@ -125,22 +138,24 @@ export function EditPanel({ editor, id, detail, schema, onSaved, onCancel }: Pro
       }
     })();
     return () => { cancelled = true; };
-  }, [adding, stdPsets, schema, detail.ifcClass]);
+  }, [adding, stdPsets, catalog, schema, detail.ifcClass]);
 
   const setRow = (gi: number, ri: number, patch: Partial<Row>) =>
     setGroups((gs) => gs.map((g, i) => (i !== gi ? g : { ...g, rows: g.rows.map((r, j) => (j !== ri ? r : { ...r, ...patch })) })));
 
-  const addRow = (gi: number) =>
-    setGroups((gs) => gs.map((g, i) => (i !== gi ? g : { ...g, rows: [...g.rows, { name: "", value: "", propType: PropertyValueType.Text, orig: "", isNew: true }] })));
+  // Append one official property (from the pset's standard definition) to a group.
+  const addOfficialProp = (gi: number, propName: string) => {
+    const g = groups[gi];
+    const p = catalog?.get(g.name)?.properties.find((x) => x.name === propName);
+    if (!p) return;
+    setGroups((gs) => gs.map((grp, i) => (i !== gi ? grp : { ...grp, rows: [...grp.rows, { name: p.name, value: "", propType: kindToType(p), orig: "", isNew: true }] })));
+  };
 
   const addPset = (name: string, props: IfcPropertyInfo[] = []) => {
     if (!name || existingNames.has(name)) { setAdding(false); return; }
-    const rows: Row[] = props.length
-      ? props.map((p) => ({ name: p.name, value: "", propType: kindToType(p), orig: "", isNew: true }))
-      : [{ name: "", value: "", propType: PropertyValueType.Text, orig: "", isNew: true }];
+    const rows: Row[] = props.map((p) => ({ name: p.name, value: "", propType: kindToType(p), orig: "", isNew: true }));
     setGroups((gs) => [...gs, { kind: "pset", name, rows, isNew: true }]);
     setAdding(false);
-    setCustomName("");
   };
 
   const save = () => {
@@ -170,22 +185,27 @@ export function EditPanel({ editor, id, detail, schema, onSaved, onCancel }: Pro
         <div className="edit-group" key={`${g.kind}:${g.name}:${gi}`}>
           <div className="edit-group-head">
             <span className="edit-group-name">{g.name}</span>
-            {g.kind === "pset" && (
-              <button className="edit-mini" title="Adaugă proprietate" onClick={() => addRow(gi)}>+ proprietate</button>
-            )}
+            {g.kind === "pset" && (() => {
+              // Only the pset's official buildingSMART properties not already present.
+              const taken = new Set(g.rows.map((r) => r.name));
+              const avail = (catalog?.get(g.name)?.properties ?? []).filter((p) => !taken.has(p.name));
+              if (!avail.length) return null;
+              return (
+                <select
+                  className="edit-mini edit-prop-picker"
+                  value=""
+                  title="Adaugă proprietate oficială"
+                  onChange={(e) => { if (e.target.value) addOfficialProp(gi, e.target.value); }}
+                >
+                  <option value="">+ proprietate</option>
+                  {avail.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+                </select>
+              );
+            })()}
           </div>
           {g.rows.map((r, ri) => (
             <div className="edit-row" key={ri}>
-              {g.kind === "attribute" || !r.isNew ? (
-                <span className="edit-k" title={r.name}>{r.name}</span>
-              ) : (
-                <input
-                  className="edit-k-input"
-                  placeholder="nume"
-                  value={r.name}
-                  onChange={(e) => setRow(gi, ri, { name: e.target.value })}
-                />
-              )}
+              <span className="edit-k" title={r.name}>{r.name}</span>
               {r.isEnum ? (
                 <select
                   className="edit-v"
@@ -223,15 +243,8 @@ export function EditPanel({ editor, id, detail, schema, onSaved, onCancel }: Pro
 
       {adding ? (
         <div className="edit-add">
-          <div className="edit-add-head">Adaugă set de proprietăți</div>
-          <div className="edit-add-custom">
-            <input
-              className="edit-k-input"
-              placeholder="Nume set custom (ex. Pset_Custom)"
-              value={customName}
-              onChange={(e) => setCustomName(e.target.value)}
-            />
-            <button className="edit-mini" disabled={!customName.trim()} onClick={() => addPset(customName.trim())}>Adaugă</button>
+          <div className="edit-add-head">
+            <span>Adaugă set de proprietăți</span>
             <button className="edit-mini ghost" onClick={() => setAdding(false)}>Renunță</button>
           </div>
           <div className="edit-add-std">

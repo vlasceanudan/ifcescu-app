@@ -19,7 +19,6 @@ export interface FileInfo {
   projectName: string;
   projectGlobalId: string;
   totalEntities: number;
-  buildingStoreys: number;
   elementsWithGeometry: number;
   /** WGS84 location of the model + the projected CRS it was derived from. */
   location: { lat: number; lon: number; crs: string } | null;
@@ -68,7 +67,6 @@ export function FileInfoPanel({ info }: { info: FileInfo }) {
       <div className="finfo-sec">
         <h4>Statistici</h4>
         <InfoRow k="Total entități" v={n(info.totalEntities)} />
-        <InfoRow k="Niveluri (storeys)" v={n(info.buildingStoreys)} />
         <InfoRow k="Elemente cu geometrie" v={n(info.elementsWithGeometry)} />
       </div>
 

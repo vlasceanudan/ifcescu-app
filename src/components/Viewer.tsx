@@ -534,7 +534,12 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
   };
 
   // --- editing (primary model only) ---------------------------------------
-  const canEditSelection = selectedIds.size === 1 && !!editTargetRef.current && isPrimary(editTargetRef.current.modelId);
+  // Editable whenever the selection resolves to a single real entity on the
+  // primary model. editTargetRef is only set when resolveGlobal maps a real
+  // positive id to an owning model, so synthetic class-group / MODEL-root rows
+  // (negative ids) stay non-editable while non-geometric spatial containers —
+  // whose own expressId resolves — become editable.
+  const canEditSelection = !!editTargetRef.current && isPrimary(editTargetRef.current.modelId);
 
   const startEdit = () => {
     const t = editTargetRef.current;
@@ -1071,7 +1076,7 @@ function collectAllIds(roots: TreeNode[], acc = new Set<number>()): Set<number> 
 }
 
 // Spatial containers are never grouped; element children are grouped by IFC class.
-const SPATIAL_TYPES = new Set(["IFCPROJECT", "IFCSITE", "IFCBUILDING", "IFCBUILDINGSTOREY", "IFCSPACE"]);
+const SPATIAL_TYPES = new Set(["IFCPROJECT", "IFCSITE", "IFCBUILDING", "IFCBUILDINGSTOREY", "IFCSPACE", "IFCFACILITY", "IFCBRIDGE", "IFCROAD", "IFCRAILWAY", "IFCMARINEFACILITY", "IFCFACILITYPART"]);
 
 function groupByClass(node: TreeNode, ctr: { n: number }): TreeNode {
   const children = node.children.map((c) => groupByClass(c, ctr));
