@@ -104,9 +104,10 @@ function ViewIcon({ kind }: { kind: "iso" | "up" | "down" | "left" | "right" | "
 }
 
 /** Line icons for the toolbar (replace the colored emoji to match the app style). */
-function ToolIcon({ kind }: { kind: "section" | "ids" | "bcf" | "table" | "point" }) {
+function ToolIcon({ kind }: { kind: "section" | "ids" | "bcf" | "table" | "point" | "views" }) {
   const a = { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
   switch (kind) {
+    case "views": return <svg {...a}><path d="M23 7l-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" /></svg>;
     case "section": return <svg {...a}><circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12" /></svg>;
     case "ids": return <svg {...a}><path d="M9 3h6v3H9zM7 4.5H5a1 1 0 0 0-1 1V20a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V5.5a1 1 0 0 0-1-1h-2" /><path d="M8.5 13.5l2.2 2.2 4.3-4.6" /></svg>;
     case "bcf": return <svg {...a}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>;
@@ -772,7 +773,7 @@ export function Viewer({ bytes, fileName, theme, georef, favorites, onToggleFavo
 
           <span className="vsep" />
 
-          <Dropdown label="Vederi" icon="🎥">
+          <Dropdown label="Vederi" icon={<ToolIcon kind="views" />}>
             <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("top")}>
               <span className="ic"><ViewIcon kind="up" /></span><span>Sus</span><span className="vmenu-key">1</span>
             </button>
