@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Modal } from "./Modal";
-import type { AggKind, FieldDef, PivotConfig, ValueColumn } from "../viewer/pivot";
+import { AGG_KINDS, aggLabel, type AggKind, type FieldDef, type PivotConfig, type ValueColumn } from "../viewer/pivot";
+import { useI18n } from "../i18n/react";
 
 interface Props {
   fields: FieldDef[];
@@ -9,17 +10,10 @@ interface Props {
   onClose: () => void;
 }
 
-const AGGS: { kind: AggKind; label: string }[] = [
-  { kind: "sum", label: "Sumă" },
-  { kind: "avg", label: "Medie" },
-  { kind: "count", label: "Număr" },
-  { kind: "min", label: "Minim" },
-  { kind: "max", label: "Maxim" },
-];
-
 /** Popup to organise the pivot: nested group-by row fields and aggregated value
  *  columns. Edits a draft; only commits to the parent on "Aplică". */
 export function DataTableConfig({ fields, config, onApply, onClose }: Props) {
+  const { t } = useI18n();
   const [groupBy, setGroupBy] = useState<string[]>(config.groupBy);
   const [values, setValues] = useState<ValueColumn[]>(config.values);
   const [showTotals, setShowTotals] = useState<boolean>(config.showTotals);
@@ -41,25 +35,25 @@ export function DataTableConfig({ fields, config, onApply, onClose }: Props) {
 
   return (
     <Modal
-      title="Organizare tabel"
+      title={t("dataTable.configTitle")}
       onClose={onClose}
       footer={
         <>
-          <button className="btn secondary" onClick={onClose}>Anulează</button>
-          <button className="btn" onClick={apply} disabled={!groupBy.length}>Aplică</button>
+          <button className="btn secondary" onClick={onClose}>{t("common.cancel")}</button>
+          <button className="btn" onClick={apply} disabled={!groupBy.length}>{t("common.apply")}</button>
         </>
       }
     >
       <div className="dt-cfg-section">
-        <div className="dt-cfg-title">Grupare pe rânduri</div>
-        {groupBy.length === 0 && <div className="dt-cfg-hint">Adaugă cel puțin un câmp de grupare.</div>}
+        <div className="dt-cfg-title">{t("dataTable.groupByRows")}</div>
+        {groupBy.length === 0 && <div className="dt-cfg-hint">{t("dataTable.groupByHint")}</div>}
         {groupBy.map((key, i) => (
           <div className="dt-cfg-row" key={key}>
             <span className="dt-cfg-idx">{i + 1}.</span>
             <span className="dt-cfg-grow">{labelOf(key)}</span>
-            <button className="dt-cfg-icon" title="Sus" disabled={i === 0} onClick={() => move(i, -1)}>▲</button>
-            <button className="dt-cfg-icon" title="Jos" disabled={i === groupBy.length - 1} onClick={() => move(i, 1)}>▼</button>
-            <button className="dt-cfg-icon" title="Elimină" onClick={() => setGroupBy(groupBy.filter((_, k) => k !== i))}>×</button>
+            <button className="dt-cfg-icon" title={t("common.up")} disabled={i === 0} onClick={() => move(i, -1)}>▲</button>
+            <button className="dt-cfg-icon" title={t("common.down")} disabled={i === groupBy.length - 1} onClick={() => move(i, 1)}>▼</button>
+            <button className="dt-cfg-icon" title={t("common.remove")} onClick={() => setGroupBy(groupBy.filter((_, k) => k !== i))}>×</button>
           </div>
         ))}
         {available.length > 0 && (
@@ -68,7 +62,7 @@ export function DataTableConfig({ fields, config, onApply, onClose }: Props) {
             value=""
             onChange={(e) => e.target.value && setGroupBy([...groupBy, e.target.value])}
           >
-            <option value="">+ Adaugă câmp de grupare…</option>
+            <option value="">{t("dataTable.addGroupField")}</option>
             {available.map((f) => (
               <option key={f.key} value={f.key}>{f.label}</option>
             ))}
@@ -77,8 +71,8 @@ export function DataTableConfig({ fields, config, onApply, onClose }: Props) {
       </div>
 
       <div className="dt-cfg-section">
-        <div className="dt-cfg-title">Coloane cu valori</div>
-        {values.length === 0 && <div className="dt-cfg-hint">Nicio coloană (se afișează doar Număr).</div>}
+        <div className="dt-cfg-title">{t("dataTable.valueColumns")}</div>
+        {values.length === 0 && <div className="dt-cfg-hint">{t("dataTable.noValueColumns")}</div>}
         {values.map((col, i) => {
           const field = fields.find((f) => f.key === col.fieldKey);
           return (
@@ -96,14 +90,14 @@ export function DataTableConfig({ fields, config, onApply, onClose }: Props) {
                 value={col.agg}
                 onChange={(e) => setValues(values.map((c, k) => (k === i ? { ...c, agg: e.target.value as AggKind } : c)))}
               >
-                {AGGS.map((a) => (
+                {AGG_KINDS.map((kind) => (
                   // Non-count aggregations only make sense on numeric fields.
-                  <option key={a.kind} value={a.kind} disabled={a.kind !== "count" && field?.kind !== "numeric"}>
-                    {a.label}
+                  <option key={kind} value={kind} disabled={kind !== "count" && field?.kind !== "numeric"}>
+                    {aggLabel(kind)}
                   </option>
                 ))}
               </select>
-              <button className="dt-cfg-icon" title="Elimină" onClick={() => setValues(values.filter((_, k) => k !== i))}>×</button>
+              <button className="dt-cfg-icon" title={t("common.remove")} onClick={() => setValues(values.filter((_, k) => k !== i))}>×</button>
             </div>
           );
         })}
@@ -114,13 +108,13 @@ export function DataTableConfig({ fields, config, onApply, onClose }: Props) {
             setValues([...values, { fieldKey: f.key, agg: f.kind === "numeric" ? "sum" : "count" }]);
           }}
         >
-          + Adaugă coloană
+          {t("dataTable.addColumn")}
         </button>
       </div>
 
       <label className="dt-cfg-check">
         <input type="checkbox" checked={showTotals} onChange={(e) => setShowTotals(e.target.checked)} />
-        Afișează rândul de total
+        {t("dataTable.showTotals")}
       </label>
     </Modal>
   );

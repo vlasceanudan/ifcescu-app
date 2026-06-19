@@ -3,6 +3,7 @@ import { DataTableConfig } from "./DataTableConfig";
 import {
   buildPivot,
   discoverFields,
+  displayLabel,
   exportPivotCsv,
   groupColor,
   rgbaCss,
@@ -11,6 +12,7 @@ import {
   type PivotRow,
   type Rgba,
 } from "../viewer/pivot";
+import { useI18n } from "../i18n/react";
 
 interface Props {
   /** All federated models (the table aggregates across every loaded model). */
@@ -25,19 +27,21 @@ interface Props {
   onClose: () => void;
 }
 
-const nf = new Intl.NumberFormat("ro-RO", { maximumFractionDigits: 2 });
-const fmt = (v: number | null) => (v == null ? "—" : nf.format(v));
-
 /** Bottom-docked data table (pivot): grouped rows + aggregated value columns,
  *  configured via a popup. Vertically resizable; coexists with the right dock. */
 export function DataTablePanel({ models, fileName, config, onConfigChange, onSelectRows, onColorByGroup, onClose }: Props) {
+  const { t, lang } = useI18n();
   const [height, setHeight] = useState(300);
   const [showConfig, setShowConfig] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [colorOn, setColorOn] = useState(false);
 
-  const fields = useMemo(() => discoverFields(models), [models]);
-  const result = useMemo(() => buildPivot(models, config), [models, config]);
+  const nf = useMemo(() => new Intl.NumberFormat(lang === "en" ? "en-US" : "ro-RO", { maximumFractionDigits: 2 }), [lang]);
+  const fmt = (v: number | null) => (v == null ? "—" : nf.format(v));
+
+  // lang in deps so localised field/aggregation labels rebuild on a language switch.
+  const fields = useMemo(() => discoverFields(models), [models, lang]);
+  const result = useMemo(() => buildPivot(models, config), [models, config, lang]);
 
   // Color the 3D viewer by the FIRST grouping level: each top-level row gets a
   // distinct color, applied to every element under it. Swatches double as legend.
@@ -85,7 +89,7 @@ export function DataTablePanel({ models, fileName, config, onConfigChange, onSel
       const hasChildren = row.children.length > 0;
       const open = expanded.has(key);
       out.push(
-        <tr key={key} className="datatable-row" onClick={() => onSelectRows(row.ids)} title="Selectează în 3D">
+        <tr key={key} className="datatable-row" onClick={() => onSelectRows(row.ids)} title={t("dataTable.selectIn3d")}>
           <td>
             <span className="dt-cell" style={{ paddingLeft: row.depth * 16 }}>
               <span
@@ -98,7 +102,7 @@ export function DataTablePanel({ models, fileName, config, onConfigChange, onSel
               {colorOn && row.depth === 0 && (
                 <span className="dt-swatch" style={{ background: coloring.swatches.get(row.label) }} />
               )}
-              <span className="dt-label">{row.label}</span>
+              <span className="dt-label">{displayLabel(row.label)}</span>
             </span>
           </td>
           <td className="dt-num">{nf.format(row.count)}</td>
@@ -114,30 +118,30 @@ export function DataTablePanel({ models, fileName, config, onConfigChange, onSel
 
   return (
     <section className="datatable-panel" style={{ height }}>
-      <div className="datatable-resize" onMouseDown={startResize} title="Trageți pentru redimensionare" />
+      <div className="datatable-resize" onMouseDown={startResize} title={t("viewer.resize")} />
       <div className="datatable-head">
-        <span className="datatable-title">📊 Tabel de date</span>
+        <span className="datatable-title">📊 {t("dataTable.title")}</span>
         <div className="datatable-actions">
           <button
             className={"ids-icon" + (colorOn ? " active" : "")}
-            title={colorOn ? "Oprește colorarea în 3D" : "Colorează elementele 3D după prima grupare"}
+            title={colorOn ? t("dataTable.colorOff") : t("dataTable.colorOn")}
             onClick={() => setColorOn((c) => !c)}
           >🎨</button>
-          <button className="ids-icon" title="Organizare (grupări și coloane)" onClick={() => setShowConfig(true)}>⚙</button>
-          <button className="ids-icon" title="Export CSV" onClick={() => exportPivotCsv(result, config, fields, fileName)}>📄</button>
-          <button className="ids-icon" title="Închide" onClick={onClose}>×</button>
+          <button className="ids-icon" title={t("dataTable.organize")} onClick={() => setShowConfig(true)}>⚙</button>
+          <button className="ids-icon" title={t("dataTable.exportCsv")} onClick={() => exportPivotCsv(result, config, fields, fileName)}>📄</button>
+          <button className="ids-icon" title={t("common.close")} onClick={onClose}>×</button>
         </div>
       </div>
 
       <div className="datatable-body">
         {result.rows.length === 0 ? (
-          <div className="datatable-empty">Adăugați cel puțin un câmp de grupare din „⚙ Organizare".</div>
+          <div className="datatable-empty">{t("dataTable.empty")}</div>
         ) : (
           <table className="datatable-table">
             <thead>
               <tr>
-                <th>Grup</th>
-                <th className="dt-num">Număr</th>
+                <th>{t("dataTable.group")}</th>
+                <th className="dt-num">{t("dataTable.count")}</th>
                 {result.columns.map((c, i) => (
                   <th key={i} className="dt-num">{c.label}</th>
                 ))}
@@ -147,7 +151,7 @@ export function DataTablePanel({ models, fileName, config, onConfigChange, onSel
             {config.showTotals && (
               <tfoot>
                 <tr className="dt-total">
-                  <td>Total</td>
+                  <td>{t("dataTable.total")}</td>
                   <td className="dt-num">{nf.format(result.totals.count)}</td>
                   {result.totals.values.map((v, i) => (
                     <td key={i} className="dt-num">{fmt(v)}</td>

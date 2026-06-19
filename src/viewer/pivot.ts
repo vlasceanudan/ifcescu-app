@@ -10,6 +10,7 @@ import {
 } from "@ifc-lite/parser";
 import { entityType } from "./model";
 import { friendly } from "../components/IfcTree";
+import { t, type I18nKey } from "../i18n";
 
 export type AggKind = "sum" | "avg" | "count" | "min" | "max";
 export type FieldKind = "categorical" | "numeric";
@@ -49,7 +50,13 @@ export interface PivotResult {
   totals: { count: number; values: (number | null)[] };
 }
 
+// Internal sentinel for "no value" — used for bucketing/sorting comparisons, so
+// it must stay a STABLE constant (not language-dependent). Translate only when
+// rendering, via displayLabel().
 export const NO_VALUE = "(fără valoare)";
+
+/** Translate the known sentinel labels at render time; data values pass through. */
+export const displayLabel = (label: string): string => (label === NO_VALUE ? t("pivot.noValue") : label);
 
 // --- group coloring (data-table → 3D viewer) ------------------------------
 export type Rgba = [number, number, number, number];
@@ -80,13 +87,16 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   return [hue2rgb(h + 1 / 3), hue2rgb(h), hue2rgb(h - 1 / 3)];
 }
 
-const AGG_LABEL: Record<AggKind, string> = {
-  sum: "Sumă",
-  avg: "Medie",
-  count: "Număr",
-  min: "Minim",
-  max: "Maxim",
+export const AGG_KINDS: AggKind[] = ["sum", "avg", "count", "min", "max"];
+const AGG_KEY: Record<AggKind, I18nKey> = {
+  sum: "dataTable.aggregate.sum",
+  avg: "dataTable.aggregate.avg",
+  count: "dataTable.aggregate.count",
+  min: "dataTable.aggregate.min",
+  max: "dataTable.aggregate.max",
 };
+/** Localised aggregation label (resolved at call time). */
+export const aggLabel = (kind: AggKind): string => t(AGG_KEY[kind]);
 
 // Property keys keep the pset so same-named properties stay distinct. Quantities
 // are merged by NAME only: official IFC Qto_ sets are split per class
@@ -122,9 +132,9 @@ export interface PivotModel {
 export function discoverFields(models: PivotModel[]): FieldDef[] {
   const byKey = new Map<string, FieldDef>();
   // "Model" only makes sense to group by when more than one model is loaded.
-  if (models.length > 1) byKey.set("model", { key: "model", label: "Model", source: "model", kind: "categorical" });
-  byKey.set("class", { key: "class", label: "Clasă IFC", source: "class", kind: "categorical" });
-  byKey.set("material", { key: "material", label: "Material", source: "material", kind: "categorical" });
+  if (models.length > 1) byKey.set("model", { key: "model", label: t("pivot.model"), source: "model", kind: "categorical" });
+  byKey.set("class", { key: "class", label: t("pivot.classField"), source: "class", kind: "categorical" });
+  byKey.set("material", { key: "material", label: t("pivot.material"), source: "material", kind: "categorical" });
   for (const m of models) {
     for (const f of discoverFieldsForStore(m.store, m.localIDs)) {
       const ex = byKey.get(f.key);
@@ -140,9 +150,12 @@ function discoverFieldsForStore(store: IfcDataStore, allIDs: number[]): FieldDef
   const cached = fieldCache.get(store);
   if (cached) return cached;
 
+  // class/material labels here are placeholders — discoverFields() overrides them
+  // with localised labels (this per-store result is cached, so it must not bake in
+  // a language-specific label).
   const fields: FieldDef[] = [
-    { key: "class", label: "Clasă IFC", source: "class", kind: "categorical" },
-    { key: "material", label: "Material", source: "material", kind: "categorical" },
+    { key: "class", label: "class", source: "class", kind: "categorical" },
+    { key: "material", label: "material", source: "material", kind: "categorical" },
   ];
   const seen = new Set<string>(fields.map((f) => f.key));
   // A property is numeric if ANY sampled value coerces to a number.
@@ -193,7 +206,7 @@ export function fieldByKey(fields: FieldDef[], key: string): FieldDef | undefine
 
 export function valueColumnLabel(fields: FieldDef[], col: ValueColumn): string {
   const f = fieldByKey(fields, col.fieldKey);
-  return `${AGG_LABEL[col.agg]}: ${f?.name ?? f?.label ?? col.fieldKey}`;
+  return `${aggLabel(col.agg)}: ${f?.name ?? f?.label ?? col.fieldKey}`;
 }
 
 // --- per-element value resolution (memoised per store) --------------------
@@ -361,12 +374,12 @@ const csvCell = (s: string) => (/[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"
 export function exportPivotCsv(result: PivotResult, config: PivotConfig, fields: FieldDef[], fileName: string): void {
   const depth = config.groupBy.length;
   const groupHeaders = config.groupBy.map((k) => fieldByKey(fields, k)?.label ?? k);
-  const header = [...groupHeaders, "Număr", ...result.columns.map((c) => c.label)];
+  const header = [...groupHeaders, t("dataTable.count"), ...result.columns.map((c) => c.label)];
   const lines: string[] = [header.map(csvCell).join(",")];
 
   const walk = (rows: PivotRow[], path: string[]) => {
     for (const row of rows) {
-      const labels = [...path, row.label];
+      const labels = [...path, displayLabel(row.label)];
       if (row.children.length) {
         walk(row.children, labels);
       } else {
@@ -384,7 +397,7 @@ export function exportPivotCsv(result: PivotResult, config: PivotConfig, fields:
   const a = document.createElement("a");
   const base = fileName.replace(/\.[^.]+$/, "") || "model";
   a.href = url;
-  a.download = `${base}-tabel.csv`;
+  a.download = `${base}-${t("dataTable.csvSuffix")}.csv`;
   document.body.appendChild(a);
   a.click();
   a.remove();
