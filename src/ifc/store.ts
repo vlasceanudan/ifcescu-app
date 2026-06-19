@@ -8,7 +8,7 @@ export type IfcSchema = "IFC2X3" | "IFC4" | "IFC4X3";
 let cache: { bytes: Uint8Array; store: IfcDataStore } | null = null;
 
 /** A standalone ArrayBuffer view of `bytes` (no Buffer offset surprises). */
-export function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 

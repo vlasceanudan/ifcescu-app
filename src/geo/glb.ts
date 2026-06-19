@@ -27,7 +27,7 @@ export function buildGlb(
   const vertexCount = positions.length / 3;
 
   const gltf = {
-    asset: { version: "2.0", generator: "plan-de-situatie-ifc" },
+    asset: { version: "2.0", generator: "ifcescu" },
     scene: 0,
     scenes: [{ nodes: [0] }],
     nodes: [{ mesh: 0 }],

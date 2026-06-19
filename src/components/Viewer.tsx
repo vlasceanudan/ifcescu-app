@@ -179,6 +179,9 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
   const [selHeader, setSelHeader] = useState<{ name: string; type: string } | null>(null);
   // In-3D editing: edit mode on/off + the structured snapshot the EditPanel renders.
   const [editing, setEditing] = useState(false);
+  // Holds the latest edit-toggle logic so the empty-deps keydown handler always
+  // sees current state/closures (mirrors the toolbar Edit button's behavior).
+  const toggleEditRef = useRef<() => void>(() => {});
   const [editDetail, setEditDetail] = useState<SelectionDetail | null>(null);
   // Only the primary model is editable; its id (federation offset 0).
   const primaryId = useMemo(() => models.find((m) => m.primary)?.id ?? models[0]?.id, [models]);
@@ -401,6 +404,8 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
         if (selectedRef.current.size) isolateIds([...selectedRef.current]);
       } else if (e.key === "s" || e.key === "S") {
         toggleSection();
+      } else if (e.key === "e" || e.key === "E") {
+        toggleEditRef.current(); // toggle the attribute/property editor
       } else if (e.key === "Delete" || e.key === "Backspace") {
         if (measureRef.current?.hasSelection()) { e.preventDefault(); measureRef.current.deleteSelected(); }
       } else if (e.key === "1") {
@@ -563,6 +568,13 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
   const exitEdit = () => {
     setEditing(false);
     setEditDetail(null);
+  };
+
+  // Keep the "E" shortcut bound to the current closures (the keydown effect's deps
+  // are empty, so it reads this ref instead of stale state).
+  toggleEditRef.current = () => {
+    if (editing) exitEdit();
+    else if (canEditSelection) startEdit();
   };
 
   // Rebuild the three per-model forests (one MODEL root per loaded model). Spatial
@@ -965,7 +977,7 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
                   <div className="sel-actions">
                     <button
                       className={"sel-btn" + (editing ? " active" : "")}
-                      title={editing ? "Închide editarea" : canEditSelection ? "Editează atribute și proprietăți" : "Editarea e disponibilă doar pe modelul principal ★"}
+                      title={editing ? "Închide editarea (E)" : canEditSelection ? "Editează atribute și proprietăți (E)" : "Editarea e disponibilă doar pe modelul principal ★"}
                       disabled={!editing && !canEditSelection}
                       onClick={() => (editing ? exitEdit() : startEdit())}
                     >
