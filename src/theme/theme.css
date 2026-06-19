@@ -2098,7 +2098,8 @@ table.summary td.k {
 }
 
 /* ===== Top-bar dark-mode toggle (round icon button) ===== */
-.theme-toggle {
+.theme-toggle,
+.lang-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2110,9 +2111,16 @@ table.summary td.k {
   color: var(--text);
   cursor: pointer;
 }
-.theme-toggle:hover {
+.theme-toggle:hover,
+.lang-toggle:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+/* The language switch shows a 2-letter target code (EN / RO). */
+.lang-toggle {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
 }
 
 /* ===== Floating quick-action bar at the bottom of the viewer ===== */

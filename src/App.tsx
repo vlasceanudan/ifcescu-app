@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { useTheme } from "./hooks/useTheme";
+import { useI18n } from "./i18n/react";
 import { IfcEditor } from "./ifc/editor";
 import type { GeorefInfo } from "./ifc/editor";
 import { Header } from "./components/Header";
@@ -32,6 +33,7 @@ function TabIcon({ kind }: { kind: "view" | "globe" }) {
 
 export default function App() {
   const [theme, toggleTheme] = useTheme();
+  const { lang, setLang, t } = useI18n();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -72,7 +74,7 @@ export default function App() {
       setLoaded({ editor, georef: editor.getGeoref(), bytes, fileName: file.name });
       setTab("view");
     } catch (e: any) {
-      setError("Nu am putut citi fișierul ca IFC valid. " + (e?.message ? `(${e.message})` : ""));
+      setError(t("app.invalidIfc", { detail: e?.message ? `(${e.message})` : "" }));
     } finally {
       setBusy(false);
     }
@@ -94,7 +96,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${base}-editat.ifc`;
+    a.download = `${base}-${t("app.editedSuffix")}.ifc`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -121,24 +123,31 @@ export default function App() {
         {loaded && (
           <nav className="tabs topbar-tabs">
             <button className={"tab" + (tab === "view" ? " active" : "")} onClick={() => setTab("view")}>
-              <TabIcon kind="view" /><span>3D</span>
+              <TabIcon kind="view" /><span>{t("app.tabView")}</span>
             </button>
             <button className={"tab" + (tab === "globe" ? " active" : "")} onClick={() => setTab("globe")}>
-              <TabIcon kind="globe" /><span>Glob 3D</span>
+              <TabIcon kind="globe" /><span>{t("app.tabGlobe")}</span>
             </button>
           </nav>
         )}
 
         <div className="topbar-right">
           {loaded && changeCount > 0 && (
-            <button className="dl-btn" onClick={downloadEdited} title="Descarcă IFC-ul cu modificările aplicate">
+            <button className="dl-btn" onClick={downloadEdited} title={t("app.downloadTitle")}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" /></svg>
-              <span>Descarcă</span>
+              <span>{t("app.download")}</span>
               <span className="dl-count">{changeCount}</span>
             </button>
           )}
           {loaded && <UploadPanel onFile={onFile} variant="button" />}
-          <button className="theme-toggle" onClick={toggleTheme} title={theme === "dark" ? "Mod luminos" : "Mod întunecat"}>
+          <button
+            className="lang-toggle"
+            onClick={() => setLang(lang === "ro" ? "en" : "ro")}
+            title={t("app.langToggleTitle")}
+          >
+            {lang === "ro" ? "EN" : "RO"}
+          </button>
+          <button className="theme-toggle" onClick={toggleTheme} title={theme === "dark" ? t("app.themeLight") : t("app.themeDark")}>
             {theme === "dark" ? (
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
             ) : (
@@ -153,7 +162,7 @@ export default function App() {
           <div className="upload-empty">
             <div>
               <UploadPanel onFile={onFile} variant="drop" />
-              {busy && <div className="alert">Se procesează fișierul…</div>}
+              {busy && <div className="alert">{t("app.processing")}</div>}
               {error && <div className="alert error">{error}</div>}
             </div>
           </div>
