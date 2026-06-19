@@ -136,7 +136,7 @@ function VisIcon({ kind }: { kind: "hide" | "isolate" | "frame" | "show" }) {
 }
 
 export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, favorites, onToggleFavorite, bcfProject, onBcfProject, idsReport, onIdsReport, models, onAddModel, onRemoveModel }: Props) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const hostRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -369,6 +369,16 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [models, ready]);
+
+  // Rebuild the per-model forests when the language changes so the localised
+  // tree labels (e.g. the material buckets) follow the switch. Skips the initial
+  // render (the model effect builds them) and any time models aren't ready yet.
+  const didMountLang = useRef(false);
+  useEffect(() => {
+    if (!didMountLang.current) { didMountLang.current = true; return; }
+    if (ready && engineRef.current) rebuildForests();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lang]);
 
   // Turning the section tool OFF removes the plane. Turning it ON only ARMS the
   // tool — the plane is created when the user double-clicks a face.

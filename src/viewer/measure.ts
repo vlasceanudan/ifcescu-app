@@ -4,6 +4,7 @@
 // Coordinates are reported in IFC model frame and, when georeferenced, Stereo 70.
 import type { ViewerEngine, SnapType } from "./engine";
 import type { GeorefInfo } from "../ifc/editor";
+import { t } from "../i18n";
 
 export type MeasureMode = "none" | "length" | "point" | "area";
 
@@ -286,7 +287,7 @@ export class MeasureTool {
       const area = polygonArea(m.pts);
       const cx = scr.reduce((a, c) => a + (c?.x ?? 0), 0) / scr.length;
       const cy = scr.reduce((a, c) => a + (c?.y ?? 0), 0) / scr.length;
-      this.label(`Suprafață ${area.toFixed(2)} m²\nPerimetru ${per.toFixed(2)} m`, cx, cy);
+      this.label(t("measure.areaPerimeter", { area: area.toFixed(2), per: per.toFixed(2) }), cx, cy);
     }
   }
 }

@@ -7,6 +7,7 @@ import { extractMergedMeshFromBytes } from "../geo/extractGeometry";
 import { loadGeoidGrid } from "../geo/geoid";
 import { computePlacement, toEnuVertices, type Placement } from "../geo/placement";
 import { buildGlb } from "../geo/glb";
+import { useI18n } from "../i18n/react";
 
 // No Cesium ion: token-free imagery (OpenStreetMap streets / Esri satellite) +
 // Esri World Elevation terrain.
@@ -23,6 +24,7 @@ interface Props {
 type Status = "loading" | "ready" | "unplaceable" | "error";
 
 export function GlobeViewer({ bytes, georef }: Props) {
+  const { t } = useI18n();
   const hostRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Cesium.Viewer | null>(null);
   const satLayerRef = useRef<Cesium.ImageryLayer | null>(null);
@@ -110,7 +112,7 @@ export function GlobeViewer({ bytes, georef }: Props) {
         if (disposed) return;
         if (!mesh.vertexCount) {
           setStatus("error");
-          setErrMsg("Modelul nu conține geometrie.");
+          setErrMsg(t("globe.noGeometry"));
           return;
         }
 
@@ -233,23 +235,20 @@ export function GlobeViewer({ bytes, georef }: Props) {
     <div className="globe-wrap">
       <div className="globe-host" ref={hostRef} />
       <div className="globe-overlay">
-        {status === "loading" && <div className="globe-card">Se plasează modelul pe glob…</div>}
-        {status === "error" && <div className="globe-card error">Eroare: {errMsg}</div>}
+        {status === "loading" && <div className="globe-card">{t("globe.placing")}</div>}
+        {status === "error" && <div className="globe-card error">{t("globe.errorPrefix")}{errMsg}</div>}
         {status === "unplaceable" && (
-          <div className="globe-card warn">
-            ⚠️ Modelul nu are georeferențiere (IfcMapConversion) și nu este în coordonate reale Stereo 70.
-            Nu poate fi plasat pe glob. Adăugați coordonatele în „Editare date”.
-          </div>
+          <div className="globe-card warn">{t("globe.unplaceable")}</div>
         )}
         {info && status === "ready" && <Readout info={info} />}
 
         <div className="globe-card controls">
           <div className="seg">
-            <button className={!satellite ? "active" : ""} onClick={() => setSatellite(false)}>🗺️ Stradă</button>
-            <button className={satellite ? "active" : ""} onClick={() => setSatellite(true)}>🛰️ Satelit</button>
+            <button className={!satellite ? "active" : ""} onClick={() => setSatellite(false)}>{t("globe.street")}</button>
+            <button className={satellite ? "active" : ""} onClick={() => setSatellite(true)}>{t("globe.satellite")}</button>
           </div>
           <label className="alpha">
-            <span>Transparență glob</span>
+            <span>{t("globe.earthTransparency")}</span>
             <input
               type="range"
               min={0}
@@ -259,7 +258,7 @@ export function GlobeViewer({ bytes, georef }: Props) {
             />
             <span className="alpha-val">{Math.round((1 - earthAlpha) * 100)}%</span>
           </label>
-          <div className="hint">Orbit: stânga • Pan: dreapta • Zoom: scroll</div>
+          <div className="hint">{t("globe.controls")}</div>
         </div>
       </div>
     </div>
@@ -271,26 +270,27 @@ function Readout({
 }: {
   info: Placement & { vertices: number; triangles: number; terrainHeight?: number };
 }) {
+  const { t, lang } = useI18n();
   const f = (n: number | undefined, d = 2) =>
     n != null && Number.isFinite(n) ? n.toFixed(d) : "—";
   return (
     <div className="globe-card readout">
       <div className="readout-title">
-        {info.mode === "georef" ? "Georeferențiere (IfcMapConversion)" : "Coordonate reale (Stereo 70)"}
+        {info.mode === "georef" ? t("globe.modeGeoref") : t("globe.modeReal")}
       </div>
       <table>
         <tbody>
-          <tr><td>Est (X)</td><td>{f(info.anchorStereo70.e)} m</td></tr>
-          <tr><td>Nord (Y)</td><td>{f(info.anchorStereo70.n)} m</td></tr>
-          <tr><td>Cotă model (Marea Neagră 1975)</td><td>{f(info.anchorStereo70.h)} m</td></tr>
+          <tr><td>{t("globe.east")}</td><td>{f(info.anchorStereo70.e)} m</td></tr>
+          <tr><td>{t("globe.north")}</td><td>{f(info.anchorStereo70.n)} m</td></tr>
+          <tr><td>{t("globe.modelElev")}</td><td>{f(info.anchorStereo70.h)} m</td></tr>
           {info.terrainHeight != null && (
-            <tr><td>Cotă teren (la ancoră)</td><td>{f(info.terrainHeight)} m</td></tr>
+            <tr><td>{t("globe.terrainElev")}</td><td>{f(info.terrainHeight)} m</td></tr>
           )}
-          <tr><td>Lon / Lat</td><td>{f(info.lonDeg, 6)}° / {f(info.latDeg, 6)}°</td></tr>
-          <tr><td>Ondulație geoid (ζ)</td><td>{f(info.geoidUndulation)} m</td></tr>
-          <tr><td>Înălțime elipsoidală</td><td>{f(info.ellipsoidalH)} m</td></tr>
-          <tr><td>Convergență meridian</td><td>{f(info.convergenceDeg, 4)}°</td></tr>
-          <tr><td>Triunghiuri</td><td>{info.triangles.toLocaleString("ro-RO")}</td></tr>
+          <tr><td>{t("globe.lonLat")}</td><td>{f(info.lonDeg, 6)}° / {f(info.latDeg, 6)}°</td></tr>
+          <tr><td>{t("globe.geoid")}</td><td>{f(info.geoidUndulation)} m</td></tr>
+          <tr><td>{t("globe.ellipsoidal")}</td><td>{f(info.ellipsoidalH)} m</td></tr>
+          <tr><td>{t("globe.convergence")}</td><td>{f(info.convergenceDeg, 4)}°</td></tr>
+          <tr><td>{t("globe.triangles")}</td><td>{info.triangles.toLocaleString(lang === "en" ? "en-US" : "ro-RO")}</td></tr>
         </tbody>
       </table>
     </div>

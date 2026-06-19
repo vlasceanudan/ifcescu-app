@@ -10,6 +10,7 @@ import {
   type IfcDataStore,
 } from "@ifc-lite/parser";
 import type { TreeNode } from "../components/IfcTree";
+import { t } from "../i18n";
 import type { PropGroup, FileInfo } from "../components/PropsPanel";
 import type { GeorefInfo } from "../ifc/editor";
 import { STEREO70, STEREO70_BOUNDS } from "../ifc/constants";
@@ -132,7 +133,7 @@ export function buildMaterialTree(store: IfcDataStore, allIDs: Set<number>): Tre
     }
     if (!items.length) continue;
     items.sort((a, b) => a.type.localeCompare(b.type) || a.expressID - b.expressID);
-    groups.push({ expressID: synthetic--, type: "IFCMATERIAL", name: mu.name || "(material fără nume)", ids, children: items, count: items.length, defaultOpen: false });
+    groups.push({ expressID: synthetic--, type: "IFCMATERIAL", name: mu.name || t("model.unnamedMaterial"), ids, children: items, count: items.length, defaultOpen: false });
   }
   groups.sort((a, b) => a.name.localeCompare(b.name));
 
@@ -146,7 +147,7 @@ export function buildMaterialTree(store: IfcDataStore, allIDs: Set<number>): Tre
   }
   if (noMat.length) {
     noMat.sort((a, b) => a.type.localeCompare(b.type) || a.expressID - b.expressID);
-    groups.push({ expressID: synthetic--, type: "IFCMATERIAL", name: "Fără material", ids: noIds, children: noMat, count: noMat.length, defaultOpen: false });
+    groups.push({ expressID: synthetic--, type: "IFCMATERIAL", name: t("model.noMaterial"), ids: noIds, children: noMat, count: noMat.length, defaultOpen: false });
   }
   return groups;
 }
@@ -202,11 +203,11 @@ export function getSelectionProps(store: IfcDataStore, id: number): SelectionPro
 
   const groups: PropGroup[] = [];
   const attrs = [
-    { k: "Nume", v: root.name ?? "" },
+    { k: t("viewer.attr.name"), v: root.name ?? "" },
     { k: "GlobalId", v: root.globalId ?? "" },
-    { k: "Descriere", v: (root as any).description ?? "" },
+    { k: t("viewer.attr.description"), v: (root as any).description ?? "" },
   ].filter((r) => r.v.length);
-  if (attrs.length) groups.push({ name: "Atribute", rows: attrs });
+  if (attrs.length) groups.push({ name: t("viewer.attrGroup"), rows: attrs });
 
   const fmt = (v: unknown) => (v == null ? "" : String(v));
   for (const set of extractPropertiesOnDemand(store, id)) {

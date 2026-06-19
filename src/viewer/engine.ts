@@ -8,6 +8,7 @@ import { GeometryProcessor, type MeshData } from "@ifc-lite/geometry";
 import type { IfcDataStore } from "@ifc-lite/parser";
 import type { ViewerCameraState, ViewerBounds } from "@ifc-lite/bcf";
 import { parseStore } from "../ifc/store";
+import { t } from "../i18n";
 
 export interface RenderState {
   hiddenIds: Set<number>;
@@ -141,7 +142,7 @@ export class ViewerEngine {
       display: "none", alignItems: "center", justifyContent: "center", fontSize: "15px", userSelect: "none",
     });
     handle.textContent = "✂️";
-    handle.title = "Trage pentru a muta secțiunea";
+    handle.title = t("measure.dragSection");
     parent.appendChild(handle);
     this.sectionHandle = handle;
     const onMove = (e: PointerEvent) => {

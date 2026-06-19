@@ -1,8 +1,10 @@
 import { type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, useEffect, useRef } from "react";
+import { useI18n } from "../i18n/react";
+import type { I18nKey } from "../i18n";
 
 type Preset = "top" | "bottom" | "front" | "back" | "left" | "right";
 
-interface FaceDef { key: string; label: string; preset: Preset; placement: string; labelRot?: number }
+interface FaceDef { key: string; labelKey: I18nKey; preset: Preset; placement: string; labelRot?: number }
 
 const SIZE = 62;
 const H = SIZE / 2;
@@ -11,12 +13,12 @@ const H = SIZE / 2;
 // `labelRot` rotates a face's text in-plane so it reads upright at that view
 // (the bottom face would otherwise show upside-down when seen from below).
 const FACES: FaceDef[] = [
-  { key: "front", label: "Față", preset: "front", placement: `translateZ(${H}px)` },
-  { key: "back", label: "Spate", preset: "back", placement: `rotateY(180deg) translateZ(${H}px)` },
-  { key: "right", label: "Dreapta", preset: "right", placement: `rotateY(90deg) translateZ(${H}px)` },
-  { key: "left", label: "Stânga", preset: "left", placement: `rotateY(-90deg) translateZ(${H}px)` },
-  { key: "top", label: "Sus", preset: "top", placement: `rotateX(90deg) translateZ(${H}px)` },
-  { key: "bottom", label: "Jos", preset: "bottom", placement: `rotateX(-90deg) translateZ(${H}px)`, labelRot: 180 },
+  { key: "front", labelKey: "viewer.viewFront", preset: "front", placement: `translateZ(${H}px)` },
+  { key: "back", labelKey: "viewer.viewBack", preset: "back", placement: `rotateY(180deg) translateZ(${H}px)` },
+  { key: "right", labelKey: "viewer.viewRight", preset: "right", placement: `rotateY(90deg) translateZ(${H}px)` },
+  { key: "left", labelKey: "viewer.viewLeft", preset: "left", placement: `rotateY(-90deg) translateZ(${H}px)` },
+  { key: "top", labelKey: "viewer.viewTop", preset: "top", placement: `rotateX(90deg) translateZ(${H}px)` },
+  { key: "bottom", labelKey: "viewer.viewBottom", preset: "bottom", placement: `rotateX(-90deg) translateZ(${H}px)`, labelRot: 180 },
 ];
 
 interface Props {
@@ -30,6 +32,7 @@ interface Props {
 /** Navigation cube: rotates with the camera; click a face → that view; drag it
  *  to orbit (the camera and the cube rotate together). */
 export function NavCube({ getTransform, onFace, onOrbit }: Props) {
+  const { t } = useI18n();
   const cubeRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let raf = 0;
@@ -77,7 +80,7 @@ export function NavCube({ getTransform, onFace, onOrbit }: Props) {
   };
 
   return (
-    <div className="navcube-wrap" title="Cub de navigație — click pe o față, trage pentru a roti">
+    <div className="navcube-wrap" title={t("navcube.title")}>
       <div className="navcube" ref={cubeRef}>
         {FACES.map((face) => (
           <div
@@ -89,7 +92,7 @@ export function NavCube({ getTransform, onFace, onOrbit }: Props) {
             onPointerUp={onUp}
             onClick={(e) => onClick(e, face.preset)}
           >
-            <span className="navcube-label" style={face.labelRot ? { transform: `rotate(${face.labelRot}deg)` } : undefined}>{face.label}</span>
+            <span className="navcube-label" style={face.labelRot ? { transform: `rotate(${face.labelRot}deg)` } : undefined}>{t(face.labelKey)}</span>
           </div>
         ))}
       </div>

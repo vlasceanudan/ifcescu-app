@@ -1,4 +1,5 @@
 import { IFC_ENTITY_NAMES } from "@ifc-lite/data";
+import { useI18n } from "../i18n/react";
 
 export interface TreeNode {
   expressID: number;
@@ -44,16 +45,17 @@ export function defaultNodeOpen(node: TreeNode, depth: number): boolean {
 }
 
 export function IfcTree({ roots, expanded, onToggle, onCollapseAll, onExpandAll, visibleIds, selectedIds, onSelect, onToggleVisible }: Props) {
+  const { t } = useI18n();
   return (
     <div className="ifctree-body">
       <div className="ifctree-toolbar">
-        <button className="tree-act" title="Restrânge tot" onClick={onCollapseAll}>
+        <button className="tree-act" title={t("tree.collapseAll")} onClick={onCollapseAll}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 9l8-5 8 5M4 15l8 5 8-5M9 12h6" /></svg>
-          <span>Restrânge tot</span>
+          <span>{t("tree.collapseAll")}</span>
         </button>
-        <button className="tree-act" title="Extinde tot" onClick={onExpandAll}>
+        <button className="tree-act" title={t("tree.expandAll")} onClick={onExpandAll}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 9l8 5 8-5M4 15l8 5 8-5" /></svg>
-          <span>Extinde tot</span>
+          <span>{t("tree.expandAll")}</span>
         </button>
       </div>
       <div className="ifctree">
@@ -75,6 +77,7 @@ function Node({
   onSelect,
   onToggleVisible,
 }: { node: TreeNode; depth: number } & Omit<Props, "roots" | "onCollapseAll" | "onExpandAll">) {
+  const { t } = useI18n();
   const open = expanded.has(node.expressID);
   const hasChildren = node.children.length > 0;
 
@@ -112,7 +115,7 @@ function Node({
         </span>
         <span
           className="teye"
-          title={anyVisible ? "Ascunde" : "Afișează"}
+          title={anyVisible ? t("tree.hide") : t("tree.show")}
           onClick={(e) => {
             e.stopPropagation();
             if (node.ids.length) onToggleVisible(node.ids, !anyVisible);
