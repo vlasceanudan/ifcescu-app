@@ -16,7 +16,8 @@ Romanian national projection **Stereo 70 (EPSG:3844)** with vertical datum
 **Marea Neagră 1975**.
 
 Built with **Vite + React + TypeScript** and the buildingSMART colour palette with
-a light/dark theme toggle. The UI is in Romanian.
+a light/dark theme toggle. The UI ships in **Romanian (default)** and **English**,
+switchable at runtime from a button in the top-right (the choice is remembered).
 
 > ⚠️ **The 3D viewer requires WebGPU** (recent Chrome/Edge, or Safari 18+). The app
 > gates on `navigator.gpu` and shows a notice when it's unavailable — **data
@@ -64,6 +65,10 @@ a light/dark theme toggle. The UI is in Romanian.
   undulation readout.
 - **Navigation** — a ViewCube overlay (click a face / drag to orbit) plus the
   keyboard shortcuts below.
+- **Language** — the whole UI switches between **Romanian (default)** and
+  **English** at runtime via the top-right RO/EN button; the preference is saved to
+  `localStorage`. IFC technical terms (class names, `Pset_*`/`Qto_*`, `GlobalId`,
+  schema, `Stereo 70`) stay verbatim in both languages.
 
 ### Keyboard shortcuts (3D viewer)
 
@@ -161,6 +166,8 @@ src/
     extractGeometry.ts     pull mesh data for globe placement
     placement.ts           Stereo 70 → WGS84 + cotă; placement-mode detection
     glb.ts                 GLB builder for Cesium
+  i18n/                    RO/EN translations: framework-agnostic singleton +
+                           typed dictionaries (ro.ts/en.ts) + React provider/hook
   hooks/useTheme.ts        light/dark theme
   theme/theme.css          buildingSMART palette + light/dark
 tests/                     vitest suite (see Testing)
