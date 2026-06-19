@@ -247,4 +247,54 @@ export const en: Dict = {
     areaPerimeter: "Area {area} m²\nPerimeter {per} m",
     dragSection: "Drag to move the section",
   },
+  help: {
+    title: "User guide",
+    buttonTitle: "User guide",
+    intro: "A short guide to the app's features. Press “?” anytime to reopen it.",
+    shortcutsTitle: "Keyboard shortcuts",
+    quickStartTitle: "Quick start",
+    quickStartBody:
+      "1. Upload an .ifc file (drag it onto the page or click).\n2. Select an element in the 3D viewer or the tree.\n3. See its attributes and properties in the right-hand panel.\n4. Edit (E), measure, create sections, or validate against IDS.\n5. Download the edited model (.ifc) from the top bar.",
+    nav3dTitle: "3D view & navigation",
+    nav3dBody:
+      "• Orbit: left mouse button.\n• Pan: right or middle mouse button.\n• Zoom: mouse wheel.\n• Navigation cube (top-right): click a face or drag to rotate.\n• Bottom bar: home, fit all, zoom, fullscreen.\n• Keys 1–6: orthographic views; Z fits all.",
+    treeTitle: "Tree & selection",
+    treeBody:
+      "• The Spatial / Class / Material tabs reorganize the same elements.\n• Click a row to select; the eye toggles visibility.\n• IFC classes are shown verbatim (IfcWall, IfcSlab…), grouped with a count.\n• Collapse all / Expand all from the tree toolbar.",
+    propertiesTitle: "Properties",
+    propertiesBody:
+      "• With an element selected: attributes (Name, Description…) + property sets; quantity sets (Qto_) come last.\n• Star a property with ☆ to pin it in the “Favorites” section.\n• With nothing selected: a model overview (size, schema, project) + the location on a map.",
+    editingTitle: "Editing & export",
+    editingBody:
+      "• Editing is available on the primary model ★. Select an element and press E (or the pencil button).\n• Change IFC attributes and existing property/quantity values.\n• Add a standard buildingSMART property set (Pset_) or a custom one.\n• “Download” writes a non-destructive edited .ifc (the rest of the file stays unchanged).",
+    toolsTitle: "Tools: measure, section, visibility",
+    toolsBody:
+      "• Measure: distance, point, or area, with snapping to vertex/midpoint/edge/face.\n• Section: double-click a face to create a clip plane; move it with the handle, adjust the size, or flip the kept side.\n• Visibility: hide (H), isolate (I), frame (F), show all.",
+    federationTitle: "Model federation",
+    federationBody:
+      "• The “Models” panel loads multiple IFC files into one scene.\n• The first model (★) sets the origin; the rest are placed by georeferencing.\n• The tree, selection, and table work across all models; editing, the Globe, IDS, and BCF apply to the primary model only.",
+    dataTableTitle: "Data table",
+    dataTableBody:
+      "• Group elements by model / class / material / property / quantity.\n• Aggregate value columns (sum/avg/count/min/max), with a totals row.\n• Click a row to select the elements in 3D; color 3D by the first grouping; export CSV.",
+    idsBcfTitle: "IDS & BCF",
+    idsBcfBody:
+      "• IDS: upload an .ids specification to check the model; see pass/fail per specification; create BCF topics from failures.\n• BCF: create a topic from the current view (camera + selection + snapshot); import/export .bcfzip.",
+    globeTitle: "3D globe",
+    globeBody:
+      "• Places the model on the globe if it has georeferencing (IfcMapConversion) or real Stereo 70 coordinates.\n• Street/Satellite basemaps, terrain, and an earth-transparency slider.\n• Readout: East/North, elevation, lon/lat, geoid undulation, ellipsoidal height.",
+    themeLangTitle: "Theme & language",
+    themeLangBody:
+      "• The ☾/☀ button toggles the light/dark theme.\n• The EN/RO button switches the interface language. Both choices are remembered.",
+    shortcut: {
+      views: "Views: top / bottom / front / back / left / right",
+      fitAll: "Fit all",
+      frame: "Frame selection",
+      hide: "Hide / restore selection",
+      isolate: "Isolate selection",
+      section: "Section plane",
+      edit: "Edit the selected element",
+      escape: "Cancel the active command",
+      del: "Delete the selected measurement",
+    },
+  },
 };

@@ -251,4 +251,54 @@ export const ro = {
     areaPerimeter: "Suprafață {area} m²\nPerimetru {per} m",
     dragSection: "Trage pentru a muta secțiunea",
   },
+  help: {
+    title: "Ghid de utilizare",
+    buttonTitle: "Ghid de utilizare",
+    intro: "Scurt ghid al funcțiilor aplicației. Apăsați „?” oricând pentru a-l redeschide.",
+    shortcutsTitle: "Scurtături de tastatură",
+    quickStartTitle: "Pași rapizi",
+    quickStartBody:
+      "1. Încărcați un fișier .ifc (trageți-l în pagină sau faceți click).\n2. Selectați un element în vizualizatorul 3D sau în arbore.\n3. Vedeți atributele și proprietățile în panoul din dreapta.\n4. Editați (E), măsurați, creați secțiuni sau validați IDS.\n5. Descărcați modelul editat (.ifc) din bara de sus.",
+    nav3dTitle: "Vizualizare & navigare 3D",
+    nav3dBody:
+      "• Orbitare: butonul stâng al mouse-ului.\n• Deplasare (pan): butonul drept sau mijlociu.\n• Zoom: rotița mouse-ului.\n• Cubul de navigație (dreapta-sus): click pe o față sau trageți pentru a roti.\n• Bara de jos: acasă, încadrează tot, zoom, ecran complet.\n• Tastele 1–6: vederi ortografice; Z încadrează tot.",
+    treeTitle: "Arbore & selecție",
+    treeBody:
+      "• Filele Spațial / Clase / Materiale reorganizează aceleași elemente.\n• Click pe un rând pentru a selecta; ochiul comută vizibilitatea.\n• Clasele IFC apar verbatim (IfcWall, IfcSlab…), grupate cu număr.\n• Restrânge tot / Extinde tot din bara arborelui.",
+    propertiesTitle: "Proprietăți",
+    propertiesBody:
+      "• Cu un element selectat: atribute (Nume, Descriere…) + seturi de proprietăți; seturile de cantități (Qto_) apar ultimele.\n• Marcați o proprietate cu ☆ pentru a o fixa în secțiunea „Favorite”.\n• Fără selecție: privire de ansamblu a modelului (dimensiune, schemă, proiect) + locația pe hartă.",
+    editingTitle: "Editare & export",
+    editingBody:
+      "• Editarea e disponibilă pe modelul principal ★. Selectați un element și apăsați E (sau butonul creion).\n• Modificați atribute IFC și valori de proprietăți/cantități existente.\n• Adăugați un set de proprietăți standard buildingSMART (Pset_) sau unul personalizat.\n• „Descarcă” scrie un .ifc editat ne-distructiv (restul fișierului rămâne neschimbat).",
+    toolsTitle: "Unelte: măsurare, secțiune, vizibilitate",
+    toolsBody:
+      "• Măsurare: distanță, punct sau arie, cu snap la vârf/mijloc/muchie/față.\n• Secțiune: dublu-click pe o față creează un plan de tăiere; mutați-l cu mânerul, ajustați dimensiunea sau inversați partea păstrată.\n• Vizibilitate: ascunde (H), izolează (I), încadrează (F), afișează tot.",
+    federationTitle: "Federare modele",
+    federationBody:
+      "• Panoul „Modele” încarcă mai multe fișiere IFC în aceeași scenă.\n• Primul model (★) dă originea; celelalte sunt plasate după georeferențiere.\n• Arborele, selecția și tabelul funcționează pe toate modelele; editarea, Globul, IDS și BCF doar pe modelul principal.",
+    dataTableTitle: "Tabel de date",
+    dataTableBody:
+      "• Grupează elementele după model / clasă / material / proprietate / cantitate.\n• Agregă coloane de valori (sumă/medie/număr/min/max), cu rând de total.\n• Click pe un rând selectează elementele în 3D; colorează 3D după prima grupare; export CSV.",
+    idsBcfTitle: "IDS & BCF",
+    idsBcfBody:
+      "• IDS: încărcați o specificație .ids pentru a verifica modelul; vedeți conform/neconform pe specificație; creați topicuri BCF din neconformități.\n• BCF: creați un topic din vederea curentă (cameră + selecție + captură); importați/exportați .bcfzip.",
+    globeTitle: "Glob 3D",
+    globeBody:
+      "• Plasează modelul pe glob dacă are georeferențiere (IfcMapConversion) sau coordonate reale Stereo 70.\n• Hărți Stradă/Satelit, teren și un cursor de transparență a globului.\n• Readout: Est/Nord, cotă, lon/lat, ondulație geoid, înălțime elipsoidală.",
+    themeLangTitle: "Temă & limbă",
+    themeLangBody:
+      "• Butonul ☾/☀ comută tema luminoasă/întunecată.\n• Butonul EN/RO comută limba interfeței. Ambele alegeri sunt memorate.",
+    shortcut: {
+      views: "Vederi: sus / jos / față / spate / stânga / dreapta",
+      fitAll: "Încadrează tot",
+      frame: "Încadrează selecția",
+      hide: "Ascunde / afișează selecția",
+      isolate: "Izolează selecția",
+      section: "Plan de secțiune",
+      edit: "Editează elementul selectat",
+      escape: "Anulează comanda activă",
+      del: "Șterge măsurătoarea selectată",
+    },
+  },
 };

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "./hooks/useTheme";
 import { useI18n } from "./i18n/react";
 import { IfcEditor } from "./ifc/editor";
@@ -7,6 +7,7 @@ import { Header } from "./components/Header";
 import { UploadPanel } from "./components/UploadPanel";
 import { Viewer } from "./components/Viewer";
 import { GlobeViewer } from "./components/GlobeViewer";
+import { HelpModal } from "./components/HelpModal";
 import type { IDSValidationReport } from "./ifc/ids";
 import type { BCFProject } from "./ifc/bcf";
 
@@ -38,6 +39,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<"view" | "globe">("view");
+  const [showHelp, setShowHelp] = useState(false);
   // Number of edits made to the primary IFC (drives the top-bar download button).
   const [changeCount, setChangeCount] = useState(0);
   // Favorited property names for the 3D viewer's property panel. Owned here so a
@@ -115,6 +117,18 @@ export default function App() {
     [loaded, extraModels],
   );
 
+  // Global "?" opens the guide (ignored while typing in a field).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "?" || e.ctrlKey || e.metaKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      setShowHelp(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   return (
     <div className="shell">
       <header className="topbar">
@@ -140,6 +154,9 @@ export default function App() {
             </button>
           )}
           {loaded && <UploadPanel onFile={onFile} variant="button" />}
+          <button className="help-toggle" onClick={() => setShowHelp(true)} title={t("help.buttonTitle")}>
+            ?
+          </button>
           <button
             className="lang-toggle"
             onClick={() => setLang(lang === "ro" ? "en" : "ro")}
@@ -192,6 +209,8 @@ export default function App() {
           <GlobeViewer bytes={loaded.bytes} georef={loaded.georef} theme={theme} />
         )}
       </main>
+
+      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
     </div>
   );
 }
