@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { parseIdsXml, runIdsValidation } from "../ifc/ids";
 import type { IDSValidationReport, IDSSpecificationResult, IDSEntityResult } from "../ifc/ids";
+import { useI18n } from "../i18n/react";
 
 interface Props {
   bytes: Uint8Array;
@@ -16,15 +17,17 @@ interface Props {
 }
 
 function StatusBadge({ status }: { status: "pass" | "fail" | "not_applicable" }) {
-  const label = status === "pass" ? "Conform" : status === "fail" ? "Neconform" : "N/A";
+  const { t } = useI18n();
+  const label = status === "pass" ? t("ids.pass") : status === "fail" ? t("ids.fail") : t("ids.na");
   return <span className={"ids-badge ids-" + status}>{label}</span>;
 }
 
 function EntityRow({ entity, onSelect }: { entity: IDSEntityResult; onSelect: (id: number) => void }) {
+  const { t } = useI18n();
   const failed = entity.requirementResults.filter((r) => r.status === "fail");
   return (
     <li className="ids-entity">
-      <button className="ids-entity-head" onClick={() => onSelect(entity.expressId)} title="Selectează în 3D">
+      <button className="ids-entity-head" onClick={() => onSelect(entity.expressId)} title={t("dataTable.selectIn3d")}>
         <span className="ids-entity-type">{entity.entityType}</span>
         {entity.entityName && <span className="ids-entity-name">{entity.entityName}</span>}
         {entity.globalId && <span className="ids-entity-guid">{entity.globalId}</span>}
@@ -55,6 +58,7 @@ function SpecCard({
   onToggle: () => void;
   onSelectEntity: (id: number) => void;
 }) {
+  const { t } = useI18n();
   const failing = spec.entityResults.filter((e) => !e.passed);
   return (
     <div className="pacc">
@@ -79,8 +83,8 @@ function SpecCard({
           {failing.length === 0 ? (
             <div className="ids-spec-ok">
               {spec.applicableCount === 0
-                ? "Nicio entitate aplicabilă în model."
-                : "Toate entitățile aplicabile sunt conforme."}
+                ? t("ids.noApplicable")
+                : t("ids.allConform")}
             </div>
           ) : (
             <ul className="ids-entities">
@@ -102,6 +106,7 @@ function SpecCard({
  * viewer from the same report); clicking a row selects + zooms to that element.
  */
 export function IdsPanel({ bytes, fileName, report, onReport, onSelectEntity, onExportBcf, onClose }: Props) {
+  const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
   const [idsName, setIdsName] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
@@ -129,7 +134,7 @@ export function IdsPanel({ bytes, fileName, report, onReport, onSelectEntity, on
       const r = await runIdsValidation(bytes, doc, fileName, (p) => setProgress(p.percentage));
       onReport(r);
     } catch (e: any) {
-      setError("Nu am putut valida IDS-ul. " + (e?.message ? `(${e.message})` : ""));
+      setError(t("ids.validateError", { detail: e?.message ? `(${e.message})` : "" }));
       onReport(null);
     } finally {
       setValidating(false);
@@ -141,18 +146,18 @@ export function IdsPanel({ bytes, fileName, report, onReport, onSelectEntity, on
   return (
     <div className="ids-panel">
       <div className="ids-head">
-        <span className="ids-head-title">📋 Validare IDS</span>
+        <span className="ids-head-title">📋 {t("ids.title")}</span>
         <div className="ids-head-actions">
-          <button className="ids-icon" title="Încarcă fișier IDS" onClick={() => inputRef.current?.click()} disabled={validating}>
+          <button className="ids-icon" title={t("ids.upload")} onClick={() => inputRef.current?.click()} disabled={validating}>
             ⤓
           </button>
           {report && (
-            <button className="ids-icon" title="Șterge raportul" onClick={() => onReport(null)}>
+            <button className="ids-icon" title={t("ids.clearReport")} onClick={() => onReport(null)}>
               🗑
             </button>
           )}
           {onClose && (
-            <button className="ids-icon" title="Închide" onClick={onClose}>
+            <button className="ids-icon" title={t("common.close")} onClick={onClose}>
               ×
             </button>
           )}
@@ -173,12 +178,9 @@ export function IdsPanel({ bytes, fileName, report, onReport, onSelectEntity, on
       <div className="ids-panel-body">
         {!report && !validating && (
           <div className="ids-empty-state">
-            <p className="ids-intro">
-              Încărcați o specificație buildingSMART IDS (.ids) pentru a verifica modelul. Descrierile
-              regulilor sunt în limba engleză.
-            </p>
+            <p className="ids-intro">{t("ids.intro")}</p>
             <button className="btn" onClick={() => inputRef.current?.click()}>
-              📤 Încarcă fișier IDS
+              {t("ids.uploadBtn")}
             </button>
           </div>
         )}
@@ -188,7 +190,7 @@ export function IdsPanel({ bytes, fileName, report, onReport, onSelectEntity, on
         {validating && (
           <div className="ids-progress">
             <div className="ids-progress-bar" style={{ width: `${progress}%` }} />
-            <span className="ids-progress-label">Se validează… {Math.round(progress)}%</span>
+            <span className="ids-progress-label">{t("ids.validating", { pct: Math.round(progress) })}</span>
           </div>
         )}
 
@@ -198,21 +200,21 @@ export function IdsPanel({ bytes, fileName, report, onReport, onSelectEntity, on
           <>
             <div className={"ids-overall " + (s.failedSpecifications === 0 ? "ok" : "bad")}>
               {s.failedSpecifications === 0 ? "✓" : "✕"} {s.passedSpecifications}/{s.totalSpecifications}{" "}
-              specificații conforme
+              {t("ids.specsConform")}
             </div>
 
             <div className="ids-summary">
               <div className="ids-stat">
                 <span className="ids-stat-num">{s.totalEntitiesChecked}</span>
-                <span className="ids-stat-lbl">Verificate</span>
+                <span className="ids-stat-lbl">{t("ids.checked")}</span>
               </div>
               <div className="ids-stat">
                 <span className="ids-stat-num ids-pass-num">{s.totalEntitiesPassed}</span>
-                <span className="ids-stat-lbl">Conforme</span>
+                <span className="ids-stat-lbl">{t("ids.conform")}</span>
               </div>
               <div className="ids-stat">
                 <span className="ids-stat-num ids-fail-num">{s.totalEntitiesFailed}</span>
-                <span className="ids-stat-lbl">Neconforme</span>
+                <span className="ids-stat-lbl">{t("ids.nonconform")}</span>
               </div>
             </div>
 
@@ -221,11 +223,11 @@ export function IdsPanel({ bytes, fileName, report, onReport, onSelectEntity, on
               <span className="ids-progress-label">{Math.round(s.overallPassRate)}%</span>
             </div>
 
-            <div className="ids-tip">💡 Apăsați o entitate pentru a o selecta și mări în vizualizator.</div>
+            <div className="ids-tip">{t("ids.tip")}</div>
 
             {onExportBcf && s.totalEntitiesFailed > 0 && (
               <button className="btn ids-export-btn" onClick={() => onExportBcf(report)}>
-                📦 Creează topicuri BCF din neconformități
+                {t("ids.createBcf")}
               </button>
             )}
 

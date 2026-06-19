@@ -14,6 +14,7 @@ import {
   expressIdsToGlobalIds,
   globalIdsToExpressIds,
 } from "../ifc/bcf";
+import { useI18n } from "../i18n/react";
 
 const DEFAULT_AUTHOR = "viewer@ifc-lite";
 
@@ -45,6 +46,7 @@ export function BcfPanel({
   onBcfProject,
   onClose,
 }: Props) {
+  const { t } = useI18n();
   const importRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -79,9 +81,9 @@ export function BcfPanel({
       onBcfProject({ ...project });
       setTitle("");
       setDescription("");
-      setNote("Topic creat.");
+      setNote(t("bcf.topicCreated"));
     } catch (e: any) {
-      setError("Eroare la crearea topicului. " + (e?.message ?? ""));
+      setError(t("bcf.createError", { detail: e?.message ?? "" }));
     } finally {
       setBusy(false);
     }
@@ -104,14 +106,14 @@ export function BcfPanel({
     try {
       const imported = await readBCF(file);
       if (bcfProject) {
-        for (const t of imported.topics.values()) addTopicToProject(bcfProject, t);
+        for (const topic of imported.topics.values()) addTopicToProject(bcfProject, topic);
         onBcfProject({ ...bcfProject });
       } else {
         onBcfProject(imported);
       }
-      setNote(`${imported.topics.size} topic(uri) importate.`);
+      setNote(t("bcf.imported", { n: imported.topics.size }));
     } catch (e: any) {
-      setError("Nu am putut citi fișierul BCF. " + (e?.message ?? ""));
+      setError(t("bcf.readError", { detail: e?.message ?? "" }));
     } finally {
       setBusy(false);
     }
@@ -124,7 +126,7 @@ export function BcfPanel({
     try {
       await downloadBcf(bcfProject, `${fileName.replace(/\.ifc$/i, "")}.bcfzip`);
     } catch (e: any) {
-      setError("Exportul BCF a eșuat. " + (e?.message ?? ""));
+      setError(t("bcf.exportError", { detail: e?.message ?? "" }));
     } finally {
       setBusy(false);
     }
@@ -133,15 +135,15 @@ export function BcfPanel({
   return (
     <div className="ids-panel">
       <div className="ids-head">
-        <span className="ids-head-title">💬 Colaborare BCF</span>
+        <span className="ids-head-title">💬 {t("bcf.title")}</span>
         <div className="ids-head-actions">
-          <button className="ids-icon" title="Importă .bcfzip" onClick={() => importRef.current?.click()} disabled={busy}>
+          <button className="ids-icon" title={t("bcf.import")} onClick={() => importRef.current?.click()} disabled={busy}>
             ⤓
           </button>
-          <button className="ids-icon" title="Exportă .bcfzip" onClick={onExport} disabled={busy || topics.length === 0}>
+          <button className="ids-icon" title={t("bcf.export")} onClick={onExport} disabled={busy || topics.length === 0}>
             📦
           </button>
-          <button className="ids-icon" title="Închide" onClick={onClose}>
+          <button className="ids-icon" title={t("common.close")} onClick={onClose}>
             ×
           </button>
         </div>
@@ -160,46 +162,46 @@ export function BcfPanel({
 
       <div className="ids-panel-body">
         <div className="bcf-form">
-          <label className="bcf-label">Titlu</label>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Titlul problemei" />
-          <label className="bcf-label">Descriere</label>
+          <label className="bcf-label">{t("bcf.titleField")}</label>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("bcf.titlePlaceholder")} />
+          <label className="bcf-label">{t("bcf.description")}</label>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={2}
-            placeholder="Opțional"
+            placeholder={t("common.optional")}
           />
-          <label className="bcf-label">Autor</label>
+          <label className="bcf-label">{t("bcf.author")}</label>
           <input value={author} onChange={(e) => setAuthor(e.target.value)} />
           <button className="btn" onClick={createTopic} disabled={busy || !title.trim() || !engine}>
-            ➕ Topic nou din vederea curentă
+            {t("bcf.newTopic")}
           </button>
           <div className="bcf-hint">
             {selectedIds.length
-              ? `${selectedIds.length} element(e) selectat(e) vor fi incluse.`
-              : "Nimic selectat — topicul va salva doar vederea."}
+              ? t("bcf.willInclude", { n: selectedIds.length })
+              : t("bcf.nothingSelected")}
           </div>
           {note && <div className="bcf-note">{note}</div>}
           {error && <div className="alert error">⛔ {error}</div>}
         </div>
 
         <div className="bcf-topics">
-          <div className="bcf-topics-head">Topicuri ({topics.length})</div>
+          <div className="bcf-topics-head">{t("bcf.topicsHead", { n: topics.length })}</div>
           {topics.length === 0 ? (
-            <div className="bcf-empty">Niciun topic încă.</div>
+            <div className="bcf-empty">{t("bcf.noTopics")}</div>
           ) : (
             <ul>
-              {topics.map((t) => (
-                <li key={t.guid} className="bcf-topic">
+              {topics.map((topic) => (
+                <li key={topic.guid} className="bcf-topic">
                   <div className="bcf-topic-info">
-                    <div className="bcf-topic-title">{t.title}</div>
+                    <div className="bcf-topic-title">{topic.title}</div>
                     <div className="bcf-topic-meta">
-                      {[t.topicType, t.topicStatus].filter(Boolean).join(" · ")}
-                      {` · ${t.comments.length} com. · ${t.viewpoints.length} vederi`}
+                      {[topic.topicType, topic.topicStatus].filter(Boolean).join(" · ")}
+                      {` · ${t("bcf.commentsViewpoints", { c: topic.comments.length, v: topic.viewpoints.length })}`}
                     </div>
                   </div>
-                  {t.viewpoints.length > 0 && (
-                    <button className="bcf-open" onClick={() => openTopic(t)} title="Deschide vederea">
+                  {topic.viewpoints.length > 0 && (
+                    <button className="bcf-open" onClick={() => openTopic(topic)} title={t("bcf.openView")}>
                       ↗ 3D
                     </button>
                   )}

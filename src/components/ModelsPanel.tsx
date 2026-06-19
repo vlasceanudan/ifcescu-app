@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { useI18n } from "../i18n/react";
 
 interface ModelRow {
   id: string;
@@ -21,6 +22,7 @@ interface Props {
 /** "Modele" section at the top of the left panel: lists federated models with a
  *  visibility toggle and remove (×), plus an "Adaugă model" button. */
 export function ModelsPanel({ models, busy, onToggleVisible, onRemove, onAddModel, height }: Props) {
+  const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
   return (
     <div
@@ -28,18 +30,18 @@ export function ModelsPanel({ models, busy, onToggleVisible, onRemove, onAddMode
       style={height != null ? { height, maxHeight: "none", flex: "0 0 auto" } : undefined}
     >
       <div className="models-head">
-        <span>Modele ({models.length})</span>
-        <button className="models-add" onClick={() => inputRef.current?.click()} disabled={busy} title="Adaugă un model IFC">
-          ＋ Adaugă model
+        <span>{t("models.head", { n: models.length })}</span>
+        <button className="models-add" onClick={() => inputRef.current?.click()} disabled={busy} title={t("models.addTitle")}>
+          {t("models.add")}
         </button>
       </div>
       <div className="models-list">
         {models.map((m) => (
           <div className="models-row" key={m.id}>
-            <span className="models-status" title="Model încărcat" />
+            <span className="models-status" title={t("models.loaded")} />
             <span
               className="models-eye"
-              title={m.visible ? "Ascunde modelul" : "Afișează modelul"}
+              title={m.visible ? t("models.hide") : t("models.show")}
               onClick={() => onToggleVisible(m.id, !m.visible)}
             >
               {m.visible ? "👁" : "🚫"}
@@ -47,14 +49,14 @@ export function ModelsPanel({ models, busy, onToggleVisible, onRemove, onAddMode
             <span className="models-name" title={m.fileName}>
               {m.fileName}{m.primary ? " ★" : ""}
             </span>
-            {m.schema && <span className="models-badge" title="Schemă IFC">{m.schema}</span>}
+            {m.schema && <span className="models-badge" title={t("models.schemaBadge")}>{m.schema}</span>}
             {!m.primary && (
-              <span className="models-rm" title="Elimină modelul" onClick={() => onRemove(m.id)}>×</span>
+              <span className="models-rm" title={t("models.remove")} onClick={() => onRemove(m.id)}>×</span>
             )}
           </div>
         ))}
       </div>
-      {busy && <div className="models-busy">Se încarcă…</div>}
+      {busy && <div className="models-busy">{t("common.loading")}</div>}
       <input
         ref={inputRef}
         type="file"

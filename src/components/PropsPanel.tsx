@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useI18n } from "../i18n/react";
 
 export interface PropRow {
   k: string;
@@ -39,8 +40,9 @@ function InfoRow({ k, v }: { k: string; v: string }) {
  * point in Google Maps / OpenStreetMap / Google Earth.
  */
 export function FileInfoPanel({ info }: { info: FileInfo }) {
+  const { t, lang } = useI18n();
   const loc = info.location;
-  const n = (x: number) => Math.round(x).toLocaleString("ro-RO");
+  const n = (x: number) => Math.round(x).toLocaleString(lang === "en" ? "en-US" : "ro-RO");
   const mapSrc = loc
     ? `https://www.openstreetmap.org/export/embed.html?bbox=${loc.lon - 0.012}%2C${
         loc.lat - 0.006
@@ -50,34 +52,34 @@ export function FileInfoPanel({ info }: { info: FileInfo }) {
   return (
     <div className="finfo">
       <div className="finfo-sec">
-        <h4>Informații fișier</h4>
-        <InfoRow k="Nume" v={info.fileName} />
-        <InfoRow k="Dimensiune" v={`${n(info.fileSizeKB)} KB`} />
-        <InfoRow k="Schemă" v={info.schema} />
+        <h4>{t("props.fileInfo")}</h4>
+        <InfoRow k={t("props.name")} v={info.fileName} />
+        <InfoRow k={t("props.size")} v={`${n(info.fileSizeKB)} KB`} />
+        <InfoRow k={t("props.schema")} v={info.schema} />
       </div>
 
       {(info.projectName || info.projectGlobalId) && (
         <div className="finfo-sec">
-          <h4>Informații proiect</h4>
-          {info.projectName && <InfoRow k="Nume" v={info.projectName} />}
+          <h4>{t("props.projectInfo")}</h4>
+          {info.projectName && <InfoRow k={t("props.name")} v={info.projectName} />}
           {info.projectGlobalId && <InfoRow k="GlobalId" v={info.projectGlobalId} />}
         </div>
       )}
 
       <div className="finfo-sec">
-        <h4>Statistici</h4>
-        <InfoRow k="Total entități" v={n(info.totalEntities)} />
-        <InfoRow k="Elemente cu geometrie" v={n(info.elementsWithGeometry)} />
+        <h4>{t("props.statistics")}</h4>
+        <InfoRow k={t("props.totalEntities")} v={n(info.totalEntities)} />
+        <InfoRow k={t("props.elementsWithGeometry")} v={n(info.elementsWithGeometry)} />
       </div>
 
       {loc && (
         <div className="finfo-sec">
-          <h4>Locație</h4>
-          <InfoRow k="Sistem de coordonate" v={loc.crs} />
-          <InfoRow k="Coordonate (lat, lon)" v={`${loc.lat.toFixed(5)}, ${loc.lon.toFixed(5)}`} />
+          <h4>{t("props.location")}</h4>
+          <InfoRow k={t("props.crs")} v={loc.crs} />
+          <InfoRow k={t("props.coords")} v={`${loc.lat.toFixed(5)}, ${loc.lon.toFixed(5)}`} />
           <div className="finfo-map">
             <iframe
-              title="Hartă locație"
+              title={t("props.mapTitle")}
               className="finfo-map-frame"
               loading="lazy"
               referrerPolicy="no-referrer-when-downgrade"
@@ -129,6 +131,7 @@ interface Props {
  * new selection, but favorites persist).
  */
 export function PropAccordion({ groups, favorites, onToggleFavorite }: Props) {
+  const { t } = useI18n();
   // Default: first group (Atribute) open, the rest collapsed.
   const [open, setOpen] = useState<Set<string>>(() => new Set(groups[0] ? [groups[0].name] : []));
   const toggle = (n: string) =>
@@ -157,7 +160,7 @@ export function PropAccordion({ groups, favorites, onToggleFavorite }: Props) {
       <button
         type="button"
         className={"pacc-star" + (fav ? " on" : "")}
-        title={fav ? "Elimină din favorite" : "Adaugă la favorite"}
+        title={fav ? t("props.unfavorite") : t("props.favorite")}
         onClick={(e) => {
           e.stopPropagation();
           onToggleFavorite(k);
@@ -175,7 +178,7 @@ export function PropAccordion({ groups, favorites, onToggleFavorite }: Props) {
           <tr key={i} className={r.edited ? "pacc-edited-row" : undefined}>
             <td className="pacc-starcell">{star(r.k)}</td>
             <td className="k">
-              {r.edited && <span className="pacc-edited" title="Modificat (nesalvat în fișier)">editat</span>}
+              {r.edited && <span className="pacc-edited" title={t("props.editedTitle")}>{t("props.editedBadge")}</span>}
               {r.k}
             </td>
             <td>{r.v}</td>
@@ -191,7 +194,7 @@ export function PropAccordion({ groups, favorites, onToggleFavorite }: Props) {
         <div className="pacc pacc-fav">
           <div className="pacc-head pacc-head-static">
             <span className="pacc-caret">★</span>
-            <span className="pacc-name">Favorite</span>
+            <span className="pacc-name">{t("props.favorites")}</span>
             <span className="pacc-count">{favRows.length}</span>
           </div>
           {rows(favRows)}

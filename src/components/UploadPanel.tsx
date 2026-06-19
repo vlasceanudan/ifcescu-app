@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { useI18n } from "../i18n/react";
 
 interface Props {
   onFile: (file: File) => void;
@@ -6,6 +7,7 @@ interface Props {
 }
 
 export function UploadPanel({ onFile, variant = "drop" }: Props) {
+  const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const pick = (files: FileList | null) => {
@@ -27,8 +29,8 @@ export function UploadPanel({ onFile, variant = "drop" }: Props) {
   if (variant === "button") {
     return (
       <>
-        <button className="toggle" onClick={() => inputRef.current?.click()} title="Încarcă alt fișier IFC">
-          📁 Schimbă fișier
+        <button className="toggle" onClick={() => inputRef.current?.click()} title={t("upload.changeTitle")}>
+          {t("upload.change")}
         </button>
         {input}
       </>
@@ -39,7 +41,7 @@ export function UploadPanel({ onFile, variant = "drop" }: Props) {
     <div className="upload-card">
       <div className="upload-icon">🧊</div>
       <h2>IFCescu</h2>
-      <p className="upload-sub">Încărcați un fișier IFC pentru a-l vizualiza în 3D și a-i edita atributele și proprietățile.</p>
+      <p className="upload-sub">{t("upload.sub")}</p>
       <div
         className="dropzone"
         onClick={() => inputRef.current?.click()}
@@ -49,7 +51,7 @@ export function UploadPanel({ onFile, variant = "drop" }: Props) {
           pick(e.dataTransfer.files);
         }}
       >
-        Trageți un fișier <strong>.ifc</strong> aici sau faceți click pentru a selecta
+        {t("upload.dropPre")}<strong>.ifc</strong>{t("upload.dropPost")}
       </div>
       {input}
     </div>

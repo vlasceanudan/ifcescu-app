@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { getPropertySets, getInheritanceChain, findEntity, PropertyValueType, QuantityType } from "@ifc-lite/data";
+import { useI18n } from "../i18n/react";
 import type { IfcPropertySetInfo, IfcPropertyInfo, IfcSchemaVersion } from "@ifc-lite/data";
 import type { IfcEditor, SelectionDetail } from "../ifc/editor";
 
@@ -68,6 +69,7 @@ const fromDetail = (detail: SelectionDetail): Group[] =>
  * standard class pset. Save applies the diffs to the model's MutablePropertyView.
  */
 export function EditPanel({ editor, id, detail, schema, onSaved, onCancel }: Props) {
+  const { t } = useI18n();
   const [groups, setGroups] = useState<Group[]>(() => fromDetail(detail));
   const [adding, setAdding] = useState(false);
   const [stdPsets, setStdPsets] = useState<readonly IfcPropertySetInfo[] | null>(null);
@@ -194,10 +196,10 @@ export function EditPanel({ editor, id, detail, schema, onSaved, onCancel }: Pro
                 <select
                   className="edit-mini edit-prop-picker"
                   value=""
-                  title="Adaugă proprietate oficială"
+                  title={t("edit.addOfficialProp")}
                   onChange={(e) => { if (e.target.value) addOfficialProp(gi, e.target.value); }}
                 >
-                  <option value="">+ proprietate</option>
+                  <option value="">{t("edit.addProperty")}</option>
                   {avail.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
                 </select>
               );
@@ -213,7 +215,7 @@ export function EditPanel({ editor, id, detail, schema, onSaved, onCancel }: Pro
                   onChange={(e) => setRow(gi, ri, { value: e.target.value })}
                   title="PredefinedType"
                 >
-                  <option value="">(nedefinit)</option>
+                  <option value="">{t("edit.undefinedEnum")}</option>
                   {[...new Set([...predefValues, ...(r.value ? [r.value] : [])].filter(Boolean))].map((v) => (
                     <option key={v} value={v}>{v}</option>
                   ))}
@@ -231,7 +233,7 @@ export function EditPanel({ editor, id, detail, schema, onSaved, onCancel }: Pro
                   className="edit-type"
                   value={r.propType ?? PropertyValueType.Text}
                   onChange={(e) => setRow(gi, ri, { propType: Number(e.target.value) as PropertyValueType })}
-                  title="Tipul valorii"
+                  title={t("edit.valueType")}
                 >
                   {TYPE_OPTS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
                 </select>
@@ -244,19 +246,19 @@ export function EditPanel({ editor, id, detail, schema, onSaved, onCancel }: Pro
       {adding ? (
         <div className="edit-add">
           <div className="edit-add-head">
-            <span>Adaugă set de proprietăți</span>
-            <button className="edit-mini ghost" onClick={() => setAdding(false)}>Renunță</button>
+            <span>{t("edit.addPset")}</span>
+            <button className="edit-mini ghost" onClick={() => setAdding(false)}>{t("edit.discard")}</button>
           </div>
           <div className="edit-add-std">
             {stdPsets == null ? (
-              <div className="edit-hint">Se încarcă seturile standard…</div>
+              <div className="edit-hint">{t("edit.loadingStd")}</div>
             ) : stdPsets.length === 0 ? (
-              <div className="edit-hint">Niciun set standard pentru această clasă.</div>
+              <div className="edit-hint">{t("edit.noStd")}</div>
             ) : (
               stdPsets
                 .filter((p) => !existingNames.has(p.name))
                 .map((p) => (
-                  <button key={p.name} className="edit-std-item" title={`${p.properties.length} proprietăți`} onClick={() => addPset(p.name, [...p.properties])}>
+                  <button key={p.name} className="edit-std-item" title={t("edit.nProps", { n: p.properties.length })} onClick={() => addPset(p.name, [...p.properties])}>
                     {p.name} <span className="edit-std-count">({p.properties.length})</span>
                   </button>
                 ))
@@ -264,12 +266,12 @@ export function EditPanel({ editor, id, detail, schema, onSaved, onCancel }: Pro
           </div>
         </div>
       ) : (
-        <button className="edit-add-btn" onClick={() => setAdding(true)}>+ Adaugă set de proprietăți</button>
+        <button className="edit-add-btn" onClick={() => setAdding(true)}>{t("edit.addPsetBtn")}</button>
       )}
 
       <div className="edit-actions">
-        <button className="btn" onClick={save}>Salvează</button>
-        <button className="btn secondary" onClick={onCancel}>Anulează</button>
+        <button className="btn" onClick={save}>{t("common.save")}</button>
+        <button className="btn secondary" onClick={onCancel}>{t("common.cancel")}</button>
       </div>
     </div>
   );
