@@ -10,6 +10,8 @@ import { buildTree, buildClassTree, buildMaterialTree, getSelectionProps, gather
 import { MeasureTool, type MeasureMode } from "../viewer/measure";
 import { IfcTree, defaultNodeOpen, type TreeNode } from "./IfcTree";
 import { PropAccordion, FileInfoPanel, type PropGroup, type FileInfo } from "./PropsPanel";
+import { useI18n } from "../i18n/react";
+import { t, type I18nKey } from "../i18n";
 import { BcfPanel } from "./BcfPanel";
 import { IdsPanel } from "./IdsPanel";
 import { DataTablePanel } from "./DataTablePanel";
@@ -134,6 +136,7 @@ function VisIcon({ kind }: { kind: "hide" | "isolate" | "frame" | "show" }) {
 }
 
 export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, favorites, onToggleFavorite, bcfProject, onBcfProject, idsReport, onIdsReport, models, onAddModel, onRemoveModel }: Props) {
+  const { t } = useI18n();
   const hostRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -764,8 +767,7 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
       <div className="viewer-wrap">
         <div className="viewer-main">
           <div className="alert error" style={{ margin: 24 }}>
-            ⚠️ Vizualizatorul 3D necesită <b>WebGPU</b>, care nu este disponibil în acest browser.
-            Folosiți Chrome/Edge recent (sau Safari 18+). Editarea datelor și exportul funcționează în continuare.
+            {t("viewer.webgpuPre")}<b>WebGPU</b>{t("viewer.webgpuPost")}
           </div>
         </div>
       </div>
@@ -783,11 +785,11 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
           onAddModel={onAddModel}
           height={modelsHeight}
         />
-        <div className="models-resize" onMouseDown={startModelsResize} title="Trageți pentru a redimensiona lista de modele" />
+        <div className="models-resize" onMouseDown={startModelsResize} title={t("viewer.resizeModels")} />
         <div className="tree-tabs">
-          <button className={"tree-tab" + (treeView === "spatial" ? " active" : "")} onClick={() => setTreeView("spatial")}>Spațial</button>
-          <button className={"tree-tab" + (treeView === "class" ? " active" : "")} onClick={() => setTreeView("class")}>Clase</button>
-          <button className={"tree-tab" + (treeView === "material" ? " active" : "")} onClick={() => setTreeView("material")}>Materiale</button>
+          <button className={"tree-tab" + (treeView === "spatial" ? " active" : "")} onClick={() => setTreeView("spatial")}>{t("viewer.treeSpatial")}</button>
+          <button className={"tree-tab" + (treeView === "class" ? " active" : "")} onClick={() => setTreeView("class")}>{t("viewer.treeClass")}</button>
+          <button className={"tree-tab" + (treeView === "material" ? " active" : "")} onClick={() => setTreeView("material")}>{t("viewer.treeMaterial")}</button>
         </div>
         {activeRoots ? (
           <IfcTree
@@ -802,80 +804,80 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
             onToggleVisible={(ids, visible) => (visible ? showIds(ids) : hideIds(ids))}
           />
         ) : (
-          <div className="ifctree-empty">Se încarcă structura…</div>
+          <div className="ifctree-empty">{t("viewer.treeLoading")}</div>
         )}
-        <div className="tree-resize" onMouseDown={startTreeResize} title="Trageți pentru redimensionare" />
+        <div className="tree-resize" onMouseDown={startTreeResize} title={t("viewer.resize")} />
       </aside>
 
       <div className="viewer-main" ref={mainRef}>
         <div className="vtoolbar">
-          <Dropdown label="Măsurare" icon="📐" active={measureMode !== "none"}>
-            <button className={"vmenu-item" + (measureMode === "length" ? " active" : "")} onClick={() => chooseMeasure("length")}><span className="ic">📏</span> Distanță</button>
-            <button className={"vmenu-item" + (measureMode === "point" ? " active" : "")} onClick={() => chooseMeasure("point")}><span className="ic"><ToolIcon kind="point" /></span> Punct</button>
-            <button className={"vmenu-item" + (measureMode === "area" ? " active" : "")} onClick={() => chooseMeasure("area")}><span className="ic">▱</span> Suprafață</button>
+          <Dropdown label={t("viewer.measure")} icon="📐" active={measureMode !== "none"}>
+            <button className={"vmenu-item" + (measureMode === "length" ? " active" : "")} onClick={() => chooseMeasure("length")}><span className="ic">📏</span> {t("viewer.measureLength")}</button>
+            <button className={"vmenu-item" + (measureMode === "point" ? " active" : "")} onClick={() => chooseMeasure("point")}><span className="ic"><ToolIcon kind="point" /></span> {t("viewer.measurePoint")}</button>
+            <button className={"vmenu-item" + (measureMode === "area" ? " active" : "")} onClick={() => chooseMeasure("area")}><span className="ic">▱</span> {t("viewer.measureArea")}</button>
             <div className="vmenu-sep" />
             <div onClick={(e) => e.stopPropagation()} style={{ padding: "4px 12px", fontSize: 12 }}>
-              <div style={{ opacity: 0.7, margin: "2px 0 4px" }}>Snap la:</div>
-              {([["vertex", "Vârf"], ["midpoint", "Mijloc"], ["edge", "Muchie"], ["face", "Față"]] as const).map(([k, lbl]) => (
+              <div style={{ opacity: 0.7, margin: "2px 0 4px" }}>{t("viewer.snapTo")}</div>
+              {([["vertex", t("viewer.snapVertex")], ["midpoint", t("viewer.snapMid")], ["edge", t("viewer.snapEdge")], ["face", t("viewer.snapFace")]] as const).map(([k, lbl]) => (
                 <label key={k} style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0", cursor: "pointer" }}>
                   <input type="checkbox" checked={snapOpts[k]} onChange={() => toggleSnap(k)} /> {lbl}
                 </label>
               ))}
             </div>
             <div className="vmenu-sep" />
-            <button className="vmenu-item danger" onClick={() => measureRef.current?.clearAll()}><span className="ic">🗑</span><span>Șterge măsurătorile</span></button>
+            <button className="vmenu-item danger" onClick={() => measureRef.current?.clearAll()}><span className="ic">🗑</span><span>{t("viewer.clearMeasures")}</span></button>
           </Dropdown>
 
           <span className="vsep" />
 
-          <Dropdown label="Secțiune" icon={<ToolIcon kind="section" />} active={section}>
+          <Dropdown label={t("viewer.section")} icon={<ToolIcon kind="section" />} active={section}>
             <button className={"vmenu-item" + (section ? " active" : "")} onClick={toggleSection}>
-              <span className="ic"><ToolIcon kind="section" /></span><span>Plan de secțiune</span><span className="vmenu-key">S</span>
+              <span className="ic"><ToolIcon kind="section" /></span><span>{t("viewer.sectionPlane")}</span><span className="vmenu-key">S</span>
             </button>
             <div className="vmenu-sep" />
-            <button className="vmenu-item danger" onClick={clearSections}><span className="ic">🗑</span><span>Șterge secțiunile</span></button>
+            <button className="vmenu-item danger" onClick={clearSections}><span className="ic">🗑</span><span>{t("viewer.clearSections")}</span></button>
           </Dropdown>
 
           <span className="vsep" />
 
-          <Dropdown label="Vizibilitate" icon="👁">
+          <Dropdown label={t("viewer.visibility")} icon="👁">
             <button className="vmenu-item" onClick={() => hideIds(selArr())}>
-              <span className="ic"><VisIcon kind="hide" /></span><span>Ascunde selecția</span><span className="vmenu-key">H</span>
+              <span className="ic"><VisIcon kind="hide" /></span><span>{t("viewer.hideSel")}</span><span className="vmenu-key">H</span>
             </button>
             <button className="vmenu-item" onClick={() => isolateIds(selArr())}>
-              <span className="ic"><VisIcon kind="isolate" /></span><span>Izolează selecția</span><span className="vmenu-key">I</span>
+              <span className="ic"><VisIcon kind="isolate" /></span><span>{t("viewer.isolateSel")}</span><span className="vmenu-key">I</span>
             </button>
             <button className="vmenu-item" onClick={() => { if (selectedRef.current.size) engineRef.current?.zoomToSelection(selectedRef.current); }}>
-              <span className="ic"><VisIcon kind="frame" /></span><span>Încadrează selecția</span><span className="vmenu-key">F</span>
+              <span className="ic"><VisIcon kind="frame" /></span><span>{t("viewer.frameSel")}</span><span className="vmenu-key">F</span>
             </button>
             <div className="vmenu-sep" />
-            <button className="vmenu-item" onClick={showAll}><span className="ic"><VisIcon kind="show" /></span><span>Afișează tot</span></button>
+            <button className="vmenu-item" onClick={showAll}><span className="ic"><VisIcon kind="show" /></span><span>{t("viewer.showAll")}</span></button>
           </Dropdown>
 
           <span className="vsep" />
 
-          <Dropdown label="Vederi" icon={<ToolIcon kind="views" />}>
+          <Dropdown label={t("viewer.views")} icon={<ToolIcon kind="views" />}>
             <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("top")}>
-              <span className="ic"><ViewIcon kind="up" /></span><span>Sus</span><span className="vmenu-key">1</span>
+              <span className="ic"><ViewIcon kind="up" /></span><span>{t("viewer.viewTop")}</span><span className="vmenu-key">1</span>
             </button>
             <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("bottom")}>
-              <span className="ic"><ViewIcon kind="down" /></span><span>Jos</span><span className="vmenu-key">2</span>
+              <span className="ic"><ViewIcon kind="down" /></span><span>{t("viewer.viewBottom")}</span><span className="vmenu-key">2</span>
             </button>
             <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("front")}>
-              <span className="ic"><ViewIcon kind="front" /></span><span>Față</span><span className="vmenu-key">3</span>
+              <span className="ic"><ViewIcon kind="front" /></span><span>{t("viewer.viewFront")}</span><span className="vmenu-key">3</span>
             </button>
             <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("back")}>
-              <span className="ic"><ViewIcon kind="back" /></span><span>Spate</span><span className="vmenu-key">4</span>
+              <span className="ic"><ViewIcon kind="back" /></span><span>{t("viewer.viewBack")}</span><span className="vmenu-key">4</span>
             </button>
             <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("left")}>
-              <span className="ic"><ViewIcon kind="left" /></span><span>Stânga</span><span className="vmenu-key">5</span>
+              <span className="ic"><ViewIcon kind="left" /></span><span>{t("viewer.viewLeft")}</span><span className="vmenu-key">5</span>
             </button>
             <button className="vmenu-item" onClick={() => engineRef.current?.setPresetView("right")}>
-              <span className="ic"><ViewIcon kind="right" /></span><span>Dreapta</span><span className="vmenu-key">6</span>
+              <span className="ic"><ViewIcon kind="right" /></span><span>{t("viewer.viewRight")}</span><span className="vmenu-key">6</span>
             </button>
             <div className="vmenu-sep" />
             <button className="vmenu-item" onClick={() => engineRef.current?.fit()}>
-              <span className="ic">⤢</span><span>Încadrează tot</span><span className="vmenu-key">Z</span>
+              <span className="ic">⤢</span><span>{t("viewer.fitAll")}</span><span className="vmenu-key">Z</span>
             </button>
           </Dropdown>
 
@@ -918,9 +920,9 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
           )}
           {section && (
             <div className="section-ctl" style={sectionCtlStyle}>
-              <span style={{ fontSize: 12, opacity: 0.85 }}>Dublu-click pe o față pentru a crea secțiunea</span>
+              <span style={{ fontSize: 12, opacity: 0.85 }}>{t("viewer.sectionHint")}</span>
               <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 12 }}>Poziție</span>
+                <span style={{ fontSize: 12 }}>{t("viewer.position")}</span>
                 <input
                   type="range" min={0} max={100} value={secPos}
                   onChange={(e) => { const v = Number(e.target.value); setSecPos(v); engineRef.current?.sectionSetPos(v); }}
@@ -929,7 +931,7 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
                 <span style={{ fontSize: 12, width: 32 }}>{secPos}%</span>
               </label>
               <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 12 }}>Dimensiune</span>
+                <span style={{ fontSize: 12 }}>{t("viewer.size")}</span>
                 <input
                   type="range" min={2} max={100} value={secSize}
                   onChange={(e) => { const v = Number(e.target.value); setSecSize(v); engineRef.current?.setSectionSize(v / 100); }}
@@ -940,7 +942,7 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
                 <input
                   type="checkbox" checked={secFlip}
                   onChange={(e) => { setSecFlip(e.target.checked); engineRef.current?.sectionSetFlipped(e.target.checked); }}
-                /> Inversează
+                /> {t("viewer.flip")}
               </label>
             </div>
           )}
@@ -960,10 +962,10 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
       </div>
 
       <aside className="props-panel" style={{ width: propsWidth }}>
-        <div className="props-resize" onMouseDown={startPropsResize} title="Trageți pentru redimensionare" />
+        <div className="props-resize" onMouseDown={startPropsResize} title={t("viewer.resize")} />
         <div className="props-head">
-          <span>{propGroups ? "Proprietăți element" : "Informații model"}</span>
-          {propGroups && <span className="props-close" onClick={clearSelection} title="Deselectează">×</span>}
+          <span>{propGroups ? t("viewer.propsTitle") : t("viewer.modelInfoTitle")}</span>
+          {propGroups && <span className="props-close" onClick={clearSelection} title={t("viewer.deselect")}>×</span>}
         </div>
         <div className="props-body">
           {propGroups ? (
@@ -971,13 +973,13 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
               {selHeader && (
                 <div className="sel-header">
                   <div className="sel-title">
-                    <div className="sel-name" title={selHeader.name}>{selHeader.name || "(fără nume)"}</div>
+                    <div className="sel-name" title={selHeader.name}>{selHeader.name || t("viewer.unnamed")}</div>
                     {selHeader.type && <div className="sel-type">{selHeader.type}</div>}
                   </div>
                   <div className="sel-actions">
                     <button
                       className={"sel-btn" + (editing ? " active" : "")}
-                      title={editing ? "Închide editarea (E)" : canEditSelection ? "Editează atribute și proprietăți (E)" : "Editarea e disponibilă doar pe modelul principal ★"}
+                      title={editing ? t("viewer.editClose") : canEditSelection ? t("viewer.editOpen") : t("viewer.editPrimaryOnly")}
                       disabled={!editing && !canEditSelection}
                       onClick={() => (editing ? exitEdit() : startEdit())}
                     >
@@ -985,12 +987,12 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
                         <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
                       </svg>
                     </button>
-                    <button className="sel-btn" title="Încadrează pe element" onClick={() => engineRef.current?.zoomToSelection(selectedRef.current)}>
+                    <button className="sel-btn" title={t("viewer.frameElement")} onClick={() => engineRef.current?.zoomToSelection(selectedRef.current)}>
                       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                         <circle cx="12" cy="12" r="4" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
                       </svg>
                     </button>
-                    <button className="sel-btn" title="Ascunde elementul" onClick={hideSelection}>
+                    <button className="sel-btn" title={t("viewer.hideElement")} onClick={hideSelection}>
                       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z" /><circle cx="12" cy="12" r="2.6" /><path d="M3 3l18 18" />
                       </svg>
@@ -1014,7 +1016,7 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
           ) : fileInfo ? (
             <FileInfoPanel info={fileInfo} />
           ) : (
-            <div className="props-empty">Selectați un element în viewer sau în arbore pentru a-i vedea proprietățile.</div>
+            <div className="props-empty">{t("viewer.propsEmpty")}</div>
           )}
         </div>
       </aside>
@@ -1051,21 +1053,26 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
 }
 
 // Friendly labels for the IfcRoot attribute rows in the read-only panel.
-const ATTR_LABELS: Record<string, string> = {
-  Name: "Nume",
-  Description: "Descriere",
-  ObjectType: "Tip obiect",
-  Tag: "Etichetă",
+// Translated at call time (the attribute name stays the IFC identifier).
+const ATTR_LABEL_KEYS: Record<string, I18nKey> = {
+  Name: "viewer.attr.name",
+  Description: "viewer.attr.description",
+  ObjectType: "viewer.attr.objectType",
+  Tag: "viewer.attr.tag",
+};
+const attrLabel = (name: string): string => {
+  const k = ATTR_LABEL_KEYS[name];
+  return k ? t(k) : name;
 };
 
 // Flatten an editor's view-aware selection into the read-only PropAccordion shape
 // (so applied edits show in the non-edit panel too). GlobalId rows are kept.
 function detailToPropGroups(detail: SelectionDetail): PropGroup[] {
   return detail.groups.map((g) => ({
-    name: g.kind === "attribute" ? "Atribute" : g.name,
+    name: g.kind === "attribute" ? t("viewer.attrGroup") : g.name,
     rows: g.rows
       .filter((r) => r.value.length)
-      .map((r) => ({ k: g.kind === "attribute" ? ATTR_LABELS[r.name] ?? r.name : r.name, v: r.value, edited: r.edited })),
+      .map((r) => ({ k: g.kind === "attribute" ? attrLabel(r.name) : r.name, v: r.value, edited: r.edited })),
   })).filter((g) => g.rows.length);
 }
 
