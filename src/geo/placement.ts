@@ -22,7 +22,7 @@ export interface Placement {
 }
 
 /** Map an IFC model point (x,y,z) to Stereo 70 (Est, Nord, H). */
-function modelToStereo70(
+export function modelToStereo70(
   georef: GeorefInfo | null,
   x: number,
   y: number,
@@ -38,7 +38,9 @@ function modelToStereo70(
   };
 }
 
-function inRomania(e: number, n: number): boolean {
+/** True when a Stereo 70 point falls inside the Romanian CRS bounds (a proxy for
+ *  "this model has a real-world location we can search around"). */
+export function inRomania(e: number, n: number): boolean {
   const b = STEREO70_BOUNDS;
   return e >= b.eMin && e <= b.eMax && n >= b.nMin && n <= b.nMax;
 }

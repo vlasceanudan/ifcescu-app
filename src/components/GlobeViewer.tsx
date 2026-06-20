@@ -6,7 +6,9 @@ import type { Theme } from "../hooks/useTheme";
 import { extractMergedMeshFromBytes } from "../geo/extractGeometry";
 import { loadGeoidGrid } from "../geo/geoid";
 import { computePlacement, toEnuVertices, type Placement } from "../geo/placement";
+import { stereo70ToWgs84 } from "../geo/crs";
 import { buildGlb } from "../geo/glb";
+import type { Parcel } from "../geo/ancpi";
 import { useI18n } from "../i18n/react";
 
 // No Cesium ion: token-free imagery (OpenStreetMap streets / Esri satellite) +
@@ -19,15 +21,18 @@ interface Props {
   bytes: Uint8Array;
   georef: GeorefInfo | null;
   theme: Theme;
+  /** ANCPI parcels (Stereo 70) drawn over the terrain as real-world polygons. */
+  parcels?: Parcel[];
 }
 
 type Status = "loading" | "ready" | "unplaceable" | "error";
 
-export function GlobeViewer({ bytes, georef }: Props) {
+export function GlobeViewer({ bytes, georef, parcels }: Props) {
   const { t } = useI18n();
   const hostRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Cesium.Viewer | null>(null);
   const satLayerRef = useRef<Cesium.ImageryLayer | null>(null);
+  const parcelEntitiesRef = useRef<Cesium.Entity[]>([]);
   const [status, setStatus] = useState<Status>("loading");
   const [satellite, setSatellite] = useState(false);
   const [earthAlpha, setEarthAlpha] = useState(1);
@@ -218,6 +223,43 @@ export function GlobeViewer({ bytes, georef }: Props) {
     if (satLayerRef.current) satLayerRef.current.show = satellite;
     viewerRef.current?.scene.requestRender();
   }, [satellite]);
+
+  // Draw the ANCPI parcels as terrain-clamped polygons (reproject Stereo 70 →
+  // WGS84). Re-runs when the parcels change or the viewer is recreated (georef
+  // change rebuilds the viewer, which drops the old entities).
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v || v.isDestroyed()) return;
+    for (const e of parcelEntitiesRef.current) v.entities.remove(e);
+    parcelEntitiesRef.current = [];
+    const fill = Cesium.Color.fromCssColorString("#3b82f6").withAlpha(0.18);
+    const line = Cesium.Color.fromCssColorString("#3b82f6");
+    for (const p of parcels ?? []) {
+      for (const ring of p.rings) {
+        const degs: number[] = [];
+        for (const [e, n] of ring) {
+          const { lonDeg, latDeg } = stereo70ToWgs84(e, n);
+          degs.push(lonDeg, latDeg);
+        }
+        if (degs.length < 6) continue;
+        const ent = v.entities.add({
+          polygon: {
+            hierarchy: Cesium.Cartesian3.fromDegreesArray(degs),
+            material: fill,
+            classificationType: Cesium.ClassificationType.BOTH,
+          },
+          polyline: {
+            positions: Cesium.Cartesian3.fromDegreesArray([...degs, degs[0], degs[1]]),
+            width: 2,
+            material: line,
+            clampToGround: true,
+          },
+        });
+        parcelEntitiesRef.current.push(ent);
+      }
+    }
+    v.scene.requestRender();
+  }, [parcels, georef]);
 
   // Earth transparency: translucent globe reveals geometry below the surface
   // (e.g. foundation piles) and the model through hills.

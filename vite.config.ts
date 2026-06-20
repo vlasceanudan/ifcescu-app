@@ -6,6 +6,18 @@ import cesium from "vite-plugin-cesium";
 // GitHub Pages path (user.github.io/<repo>/) without rebuilding.
 export default defineConfig({
   base: "./",
+  // Dev-only proxy so the ANCPI cadastral fetch (src/geo/ancpi.ts) isn't blocked
+  // by CORS: requests to /ancpi/* are forwarded to the geoportal with its host.
+  server: {
+    proxy: {
+      "/ancpi": {
+        target: "https://geoportal.ancpi.ro",
+        changeOrigin: true,
+        secure: false,
+        rewrite: (p) => p.replace(/^\/ancpi/, ""),
+      },
+    },
+  },
   // @ifc-lite/ids bundles a top-level `await import()` (a Node-only branch of its
   // XML parser). Top-level await needs a modern target; the app already requires
   // WebGPU, so targeting esnext is safe and avoids the es2020 transpile error.

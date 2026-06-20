@@ -1,0 +1,84 @@
+// App settings singleton (persisted to localStorage). Mirrors the i18n pattern:
+// non-React modules (e.g. viewer/measure) read getSettings() synchronously, while
+// React code subscribes via ./react (useSettings). One JSON blob, deep-merged over
+// DEFAULTS on load so blobs saved by older versions gain new keys without crashing.
+
+export type LengthUnit = "m" | "cm" | "mm";
+export type AreaUnit = "m2" | "ha";
+export type Projection = "perspective" | "orthographic";
+
+export interface Settings {
+  /** Experimental modules, off by default. Gates the whole Cadastre module. */
+  experimental: { cadastre: boolean };
+  units: { length: LengthUnit; area: AreaUnit; decimals: number };
+  viewer: {
+    /** Hex override for the 3D background; null = use the theme default. */
+    background: string | null;
+    navCube: boolean;
+    viewBar: boolean;
+    projection: Projection;
+    snap: { vertex: boolean; midpoint: boolean; edge: boolean; face: boolean };
+  };
+}
+
+export const DEFAULTS: Settings = {
+  experimental: { cadastre: false },
+  units: { length: "m", area: "m2", decimals: 3 },
+  viewer: {
+    background: null,
+    navCube: true,
+    viewBar: true,
+    projection: "perspective",
+    snap: { vertex: true, midpoint: true, edge: true, face: true },
+  },
+};
+
+const KEY = "ifc-app-settings";
+
+/** Deep-merge a stored (possibly partial / outdated) blob over the defaults. */
+function merge(base: Settings, patch: any): Settings {
+  if (!patch || typeof patch !== "object") return base;
+  return {
+    experimental: { ...base.experimental, ...patch.experimental },
+    units: { ...base.units, ...patch.units },
+    viewer: {
+      ...base.viewer,
+      ...patch.viewer,
+      snap: { ...base.viewer.snap, ...(patch.viewer?.snap ?? {}) },
+    },
+  };
+}
+
+function load(): Settings {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) return merge(DEFAULTS, JSON.parse(raw));
+  } catch {
+    /* localStorage unavailable or corrupt JSON — fall back to defaults */
+  }
+  return DEFAULTS;
+}
+
+let current: Settings = load();
+const listeners = new Set<() => void>();
+
+export function getSettings(): Settings {
+  return current;
+}
+
+/** Apply a deep-partial patch, persist, and notify listeners. */
+export function updateSettings(patch: any): void {
+  current = merge(current, patch);
+  try {
+    localStorage.setItem(KEY, JSON.stringify(current));
+  } catch {
+    /* ignore persistence failures */
+  }
+  listeners.forEach((fn) => fn());
+}
+
+/** Subscribe to settings changes; returns an unsubscribe function. */
+export function subscribe(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}

@@ -8,14 +8,20 @@ import { EditPanel } from "./EditPanel";
 import { ViewerEngine } from "../viewer/engine";
 import { buildTree, buildClassTree, buildMaterialTree, getSelectionProps, gatherFileInfo, offsetTree, modelRootNode } from "../viewer/model";
 import { MeasureTool, type MeasureMode } from "../viewer/measure";
+import { AlignTool, type AlignSlot } from "../viewer/alignTool";
+import { ParcelLayer, type ParcelInfo } from "../viewer/parcelLayer";
+import { modelToStereo70, inRomania } from "../geo/placement";
+import type { Parcel } from "../geo/ancpi";
 import { IfcTree, defaultNodeOpen, type TreeNode } from "./IfcTree";
 import { PropAccordion, FileInfoPanel, type PropGroup, type FileInfo } from "./PropsPanel";
 import { useI18n } from "../i18n/react";
+import { useSettings } from "../settings/react";
 import { t, type I18nKey } from "../i18n";
 import { BcfPanel } from "./BcfPanel";
 import { IdsPanel } from "./IdsPanel";
 import { DataTablePanel } from "./DataTablePanel";
 import { ModelsPanel } from "./ModelsPanel";
+import { GeorefPanel } from "./GeorefPanel";
 import { NavCube } from "./NavCube";
 import { ViewBar } from "./ViewBar";
 import type { PivotConfig, PivotModel, Rgba } from "../viewer/pivot";
@@ -47,6 +53,17 @@ interface Props {
   models: ViewerModelInput[];
   onAddModel: (file: File) => void;
   onRemoveModel: (id: string) => void;
+  /** Push a georef computed by the cadastral alignment tool up to App (live placement). */
+  onGeorefChange?: (g: GeorefInfo) => void;
+  /** ANCPI parcels (lifted to App so the globe tab can draw them too). */
+  parcels: Parcel[];
+  onParcelsChange: (parcels: Parcel[]) => void;
+}
+
+interface IfcPoint {
+  x: number;
+  y: number;
+  z: number;
 }
 
 export interface ViewerModelInput {
@@ -62,6 +79,14 @@ const VIEWER_BG: Record<Theme, [number, number, number, number]> = {
   dark: [0.039, 0.055, 0.102, 1], // deep navy, matches the dark UI (#0a0e1a)
 };
 const hasWebGPU = typeof navigator !== "undefined" && "gpu" in navigator && !!(navigator as any).gpu;
+
+/** "#rrggbb" → renderer clearColor [r,g,b,a] in 0..1. */
+function hexToRgba(hex: string): [number, number, number, number] {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return [0.93, 0.94, 0.96, 1];
+  const n = parseInt(m[1], 16);
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255, 1];
+}
 
 const sectionCtlStyle: CSSProperties = {
   position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 6,
@@ -112,9 +137,12 @@ function ViewIcon({ kind }: { kind: "iso" | "up" | "down" | "left" | "right" | "
 }
 
 /** Line icons for the toolbar (replace the colored emoji to match the app style). */
-function ToolIcon({ kind }: { kind: "section" | "ids" | "bcf" | "table" | "point" | "views" }) {
+function ToolIcon({ kind }: { kind: "section" | "ids" | "bcf" | "table" | "point" | "views" | "measure" | "distance" | "cadastre" }) {
   const a = { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
   switch (kind) {
+    case "measure": return <svg {...a}><path d="M15.3 2.3 2.3 15.3l6.4 6.4L21.7 8.7z" /><path d="M7 7l1.6 1.6M10 4l1.6 1.6M4 10l1.6 1.6M13 13l1.6 1.6" /></svg>;
+    case "distance": return <svg {...a}><path d="M3 12h18" /><path d="M6 8l-3 4 3 4M18 8l3 4-3 4" /></svg>;
+    case "cadastre": return <svg {...a}><path d="M9 4 3 7v13l6-3 6 3 6-3V4l-6 3z" /><path d="M9 4v13M15 7v13" /></svg>;
     case "views": return <svg {...a}><path d="M23 7l-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" /></svg>;
     case "section": return <svg {...a}><circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12" /></svg>;
     case "ids": return <svg {...a}><path d="M9 3h6v3H9zM7 4.5H5a1 1 0 0 0-1 1V20a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V5.5a1 1 0 0 0-1-1h-2" /><path d="M8.5 13.5l2.2 2.2 4.3-4.6" /></svg>;
@@ -135,15 +163,22 @@ function VisIcon({ kind }: { kind: "hide" | "isolate" | "frame" | "show" }) {
   }
 }
 
-export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, favorites, onToggleFavorite, bcfProject, onBcfProject, idsReport, onIdsReport, models, onAddModel, onRemoveModel }: Props) {
+export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, favorites, onToggleFavorite, bcfProject, onBcfProject, idsReport, onIdsReport, models, onAddModel, onRemoveModel, onGeorefChange, parcels, onParcelsChange }: Props) {
   const { t, lang } = useI18n();
+  const { settings } = useSettings();
+  const cadastreEnabled = settings.experimental.cadastre;
   const hostRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<ViewerEngine | null>(null);
   const measureRef = useRef<MeasureTool | null>(null);
+  const alignToolRef = useRef<AlignTool | null>(null);
+  const parcelLayerRef = useRef<ParcelLayer | null>(null);
   const storeRef = useRef<IfcDataStore | null>(null);
   const georefRef = useRef<GeorefInfo | null>(georef);
+  // Primary model centroid in raw IFC coords — the basis for auto-centring the
+  // cadastral search on the model (mapped to Stereo 70 via the current georef).
+  const modelCentroidRef = useRef<IfcPoint | null>(null);
 
   const allIDsRef = useRef<number[]>([]);
   const hiddenRef = useRef<Set<number>>(new Set());
@@ -165,7 +200,7 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
   // kept so the existing setStatus call sites stay valid.
   const [, setStatus] = useState("Se inițializează vizualizatorul…");
   const [measureMode, setMeasureMode] = useState<MeasureMode>("none");
-  const [snapOpts, setSnapOpts] = useState({ vertex: true, midpoint: true, edge: true, face: true });
+  const [snapOpts, setSnapOpts] = useState({ ...settings.viewer.snap });
   const toggleSnap = (k: "vertex" | "midpoint" | "edge" | "face") =>
     setSnapOpts((s) => {
       const next = { ...s, [k]: !s[k] };
@@ -214,8 +249,25 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
   const [visibleIds, setVisibleIds] = useState<Set<number>>(new Set());
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [ready, setReady] = useState(false);
-  // The right dock hosts EITHER the IDS panel or the BCF panel (toolbar toggles).
-  const [dock, setDock] = useState<"none" | "ids" | "bcf">("none");
+  // The right dock hosts the IDS, BCF or cadastral georeferencing panel (toolbar toggles).
+  const [dock, setDock] = useState<"none" | "ids" | "bcf" | "geo">("none");
+  // Cadastral alignment: which model point the align tool is capturing, and the
+  // two captured model points (raw IFC coords) paired with parcel corners.
+  const [armedSlot, setArmedSlot] = useState<AlignSlot | null>(null);
+  const [modelPtA, setModelPtA] = useState<IfcPoint | null>(null);
+  const [modelPtB, setModelPtB] = useState<IfcPoint | null>(null);
+  // Parcel-corner targets (Stereo 70), picked by snapping in the 3D scene or on
+  // the 2D map. armedCornerRef mirrors the state for the (stale-closure) handlers.
+  const [targetA, setTargetA] = useState<{ e: number; n: number } | null>(null);
+  const [targetB, setTargetB] = useState<{ e: number; n: number } | null>(null);
+  const [armedCorner, setArmedCorner] = useState<AlignSlot | null>(null);
+  const armedCornerRef = useRef<AlignSlot | null>(null);
+  // Selected parcel (info shown in the panel) + the "show all numbers" toggle.
+  const [selectedParcel, setSelectedParcel] = useState<ParcelInfo | null>(null);
+  const [showAllLabels, setShowAllLabels] = useState(false);
+  // Model-info panel is open by default on load; it can be closed (×) or toggled
+  // from the toolbar. A selection still takes over the right panel with props.
+  const [showInfo, setShowInfo] = useState(true);
   // Per-element colors from the data-table "color by group" toggle (null = off).
   // Takes priority over the IDS red-paint when both could apply.
   const [groupColorMap, setGroupColorMap] = useState<Map<number, Rgba> | null>(null);
@@ -263,10 +315,14 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
     (window as any).__engine = engine;
     engine.setState({ clearColor: VIEWER_BG[theme] });
 
-    let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+    // Resize on the next animation frame (not a 100ms timeout): opening/closing a
+    // dock or the props panel changes the viewer width, and a slow resize leaves
+    // the WebGPU canvas stretched for a moment. rAF coalesces bursts (e.g. while
+    // dragging a divider) without the visible lag.
+    let resizeRaf = 0;
     const ro = new ResizeObserver(() => {
-      clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => engineRef.current?.resize(), 100);
+      cancelAnimationFrame(resizeRaf);
+      resizeRaf = requestAnimationFrame(() => engineRef.current?.resize());
     });
     ro.observe(host);
 
@@ -288,6 +344,14 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
 
         measureRef.current = new MeasureTool(engine, host);
         measureRef.current.setGeoref(georefRef.current);
+        alignToolRef.current = new AlignTool(engine, host, (slot, ifcPt) => {
+          if (slot === "A") setModelPtA(ifcPt);
+          else setModelPtB(ifcPt);
+          setArmedSlot(null);
+        });
+        alignToolRef.current.setGeoref(georefRef.current);
+        parcelLayerRef.current = new ParcelLayer(engine, host);
+        measureRef.current.setParcelLayer(parcelLayerRef.current); // measure can snap to parcel corners
         engine.onSectionMove = (pos) => setSecPos(pos); // keep the slider in sync with the drag handle
         wireEvents(host);
 
@@ -297,6 +361,7 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
         const centroid = mb
           ? engine.worldToIfc({ x: (mb.min[0] + mb.max[0]) / 2, y: (mb.min[1] + mb.max[1]) / 2, z: (mb.min[2] + mb.max[2]) / 2 })
           : { x: engine.rtcOffset.x, y: engine.rtcOffset.y, z: engine.rtcOffset.z };
+        modelCentroidRef.current = centroid;
         setFileInfo(
           gatherFileInfo(store, globalIDs.length, bytes.length, fileName, detectSchema(bytes), georefRef.current, centroid),
         );
@@ -309,25 +374,67 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
 
     return () => {
       disposed = true;
-      clearTimeout(resizeTimer);
+      cancelAnimationFrame(resizeRaf);
       ro.disconnect();
       measureRef.current?.dispose();
+      alignToolRef.current?.dispose();
+      parcelLayerRef.current?.dispose();
       engine.dispose();
       measureRef.current = null;
+      alignToolRef.current = null;
+      parcelLayerRef.current = null;
       engineRef.current = null;
       delete (window as any).__engine;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Background: a settings override (hex) wins over the theme default.
   useEffect(() => {
-    engineRef.current?.setState({ clearColor: VIEWER_BG[theme] });
-  }, [theme]);
+    const bg = settings.viewer.background;
+    engineRef.current?.setState({ clearColor: bg ? hexToRgba(bg) : VIEWER_BG[theme] });
+  }, [theme, settings.viewer.background]);
+
+  // Camera projection follows the setting.
+  useEffect(() => {
+    engineRef.current?.setProjection(settings.viewer.projection);
+  }, [settings.viewer.projection, ready]);
+
+  // Default snap options come from settings (toolbar toggles still override live).
+  useEffect(() => {
+    const next = { ...settings.viewer.snap };
+    setSnapOpts(next);
+    if (engineRef.current) engineRef.current.snapOptions = next;
+  }, [settings.viewer.snap]);
 
   useEffect(() => {
     georefRef.current = georef;
     measureRef.current?.setGeoref(georef);
+    alignToolRef.current?.setGeoref(georef);
   }, [georef]);
+
+  // Draw the fetched parcels in the 3D scene (only while the cadastral panel is
+  // open), re-projecting whenever the parcels or the georef change.
+  useEffect(() => {
+    const show = cadastreEnabled && dock === "geo";
+    parcelLayerRef.current?.setData(show ? parcels : [], georef);
+    if (!show) setSelectedParcel(null);
+  }, [parcels, georef, dock, ready, cadastreEnabled]);
+
+  // Disabling the Cadastre module while its panel is open closes + disarms it.
+  useEffect(() => {
+    if (cadastreEnabled) return;
+    setDock((d) => (d === "geo" ? "none" : d));
+    setArmedSlot(null);
+    alignToolRef.current?.disarm();
+    setArmedCorner(null);
+    armedCornerRef.current = null;
+    parcelLayerRef.current?.setArmed(false);
+  }, [cadastreEnabled]);
+
+  useEffect(() => {
+    parcelLayerRef.current?.setShowAllLabels(showAllLabels);
+  }, [showAllLabels]);
 
   // Federation: react to the models list — add newcomers, remove the departed,
   // then rebuild the per-model forests. Runs once primary is ready, then on every
@@ -406,6 +513,11 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
       if (e.key === "Escape") {
         chooseMeasure("none");
         if (sectionRef.current) toggleSection();
+        setArmedSlot(null);
+        alignToolRef.current?.disarm();
+        setArmedCorner(null);
+        armedCornerRef.current = null;
+        parcelLayerRef.current?.setArmed(false);
         setStatus("Comandă anulată (Esc).");
       } else if (e.key === "h" || e.key === "H") {
         toggleHideSelection();
@@ -480,6 +592,15 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
 
   function wireEvents(host: HTMLElement) {
     host.onclick = async (ev: MouseEvent) => {
+      const align = alignToolRef.current;
+      if (align && align.armed()) return align.onClick(ev);
+      const layer = parcelLayerRef.current;
+      if (layer && layer.armed()) {
+        const c = layer.pickCorner(ev.clientX, ev.clientY);
+        const slot = armedCornerRef.current;
+        if (c && slot) setCornerTarget(slot, c);
+        return; // consume the click while picking a parcel corner
+      }
       const measure = measureRef.current;
       if (measure && measure.mode !== "none") return measure.onClick(ev);
       if (sectionRef.current) return;
@@ -489,8 +610,17 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
       const engine = engineRef.current;
       if (!engine) return;
       const hit = await engine.pick(ev.clientX, ev.clientY);
-      if (hit && hit.expressId != null) selectIds([hit.expressId], hit.expressId);
-      else clearSelection();
+      if (hit && hit.expressId != null) {
+        selectIds([hit.expressId], hit.expressId);
+        parcelLayerRef.current?.clearSelection();
+        setSelectedParcel(null);
+      } else {
+        // Clicking empty space over a parcel selects the parcel instead.
+        const info = parcelLayerRef.current?.selectAt(ev.clientX, ev.clientY) ?? null;
+        clearSelection();
+        setSelectedParcel(info);
+        if (!info) parcelLayerRef.current?.clearSelection();
+      }
     };
     host.ondblclick = (ev: MouseEvent) => {
       const measure = measureRef.current;
@@ -500,10 +630,53 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
       if (sectionRef.current) sectionFromFace(ev);
     };
     host.onmousemove = (ev: MouseEvent) => {
+      const align = alignToolRef.current;
+      if (align && align.armed()) { align.onMove(ev); return; }
+      const layer = parcelLayerRef.current;
+      if (layer && layer.armed()) { layer.onHover(ev.clientX, ev.clientY); return; }
       const measure = measureRef.current;
-      if (measure && measure.mode !== "none") measure.onMove(ev);
+      if (measure && measure.mode !== "none") { measure.onMove(ev); return; }
+      // idle: highlight the parcel under the cursor (no-op when no parcels loaded)
+      layer?.onHover(ev.clientX, ev.clientY);
     };
   }
+
+  // --- cadastral georeferencing -------------------------------------------
+  const armModelPick = (slot: AlignSlot) => {
+    // model-point and parcel-corner picking are mutually exclusive
+    setArmedCorner(null);
+    armedCornerRef.current = null;
+    parcelLayerRef.current?.setArmed(false);
+    setArmedSlot(slot);
+    alignToolRef.current?.arm(slot);
+  };
+  const armCornerPick = (slot: AlignSlot) => {
+    setArmedSlot(null);
+    alignToolRef.current?.disarm();
+    armedCornerRef.current = slot;
+    setArmedCorner(slot);
+    parcelLayerRef.current?.setArmed(true);
+  };
+  const setCornerTarget = (slot: AlignSlot, c: { e: number; n: number }) => {
+    if (slot === "A") setTargetA(c);
+    else setTargetB(c);
+    armedCornerRef.current = null;
+    setArmedCorner(null);
+    parcelLayerRef.current?.setArmed(false);
+  };
+  // Apply a computed georef live: viewer Stereo 70 readouts + (via App) the globe.
+  const applyGeorefLive = (g: GeorefInfo) => {
+    georefRef.current = g;
+    measureRef.current?.setGeoref(g);
+    alignToolRef.current?.setGeoref(g);
+    onGeorefChange?.(g);
+  };
+  // Apply live AND record it for the non-destructive IFC export (IfcMapConversion).
+  const writeGeorefToIfc = (g: GeorefInfo) => {
+    applyGeorefLive(g);
+    editor.setGeoref(g);
+    onChangeCount(editor.changeCount());
+  };
 
   const isPrimary = (modelId: string) => modelId === primaryId;
 
@@ -821,8 +994,8 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
 
       <div className="viewer-main" ref={mainRef}>
         <div className="vtoolbar">
-          <Dropdown label={t("viewer.measure")} icon="📐" active={measureMode !== "none"}>
-            <button className={"vmenu-item" + (measureMode === "length" ? " active" : "")} onClick={() => chooseMeasure("length")}><span className="ic">📏</span> {t("viewer.measureLength")}</button>
+          <Dropdown label={t("viewer.measure")} icon={<ToolIcon kind="measure" />} active={measureMode !== "none"}>
+            <button className={"vmenu-item" + (measureMode === "length" ? " active" : "")} onClick={() => chooseMeasure("length")}><span className="ic"><ToolIcon kind="distance" /></span> {t("viewer.measureLength")}</button>
             <button className={"vmenu-item" + (measureMode === "point" ? " active" : "")} onClick={() => chooseMeasure("point")}><span className="ic"><ToolIcon kind="point" /></span> {t("viewer.measurePoint")}</button>
             <button className={"vmenu-item" + (measureMode === "area" ? " active" : "")} onClick={() => chooseMeasure("area")}><span className="ic">▱</span> {t("viewer.measureArea")}</button>
             <div className="vmenu-sep" />
@@ -907,18 +1080,32 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
             <span className="ic"><ToolIcon kind="table" /></span>
             <span>Tabel</span>
           </button>
+
+          {cadastreEnabled && (
+            <button className={"vbtn" + (dock === "geo" ? " active" : "")} onClick={() => setDock((d) => (d === "geo" ? "none" : "geo"))}>
+              <span className="ic"><ToolIcon kind="cadastre" /></span>
+              <span>{t("geo.tab")}</span>
+            </button>
+          )}
+
+          <span className="vsep" />
+
+          <button className={"vbtn" + (showInfo ? " active" : "")} onClick={() => setShowInfo((s) => !s)} title={t("viewer.modelInfoTitle")}>
+            <span className="ic">ℹ</span>
+            <span>{t("viewer.info")}</span>
+          </button>
         </div>
 
         <div className="viewer-host" ref={hostRef} style={{ position: "relative" }}>
           <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
-          {ready && (
+          {ready && settings.viewer.navCube && (
             <NavCube
               getTransform={() => engineRef.current?.cubeMatrix() ?? ""}
               onFace={(v) => engineRef.current?.setPresetView(v)}
               onOrbit={(dx, dy) => engineRef.current?.orbit(dx, dy)}
             />
           )}
-          {ready && (
+          {ready && settings.viewer.viewBar && (
             <ViewBar
               onHome={() => engineRef.current?.homeView()}
               onFit={() => engineRef.current?.fit()}
@@ -971,11 +1158,12 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
         )}
       </div>
 
+      {(propGroups || showInfo) && (
       <aside className="props-panel" style={{ width: propsWidth }}>
         <div className="props-resize" onMouseDown={startPropsResize} title={t("viewer.resize")} />
         <div className="props-head">
           <span>{propGroups ? t("viewer.propsTitle") : t("viewer.modelInfoTitle")}</span>
-          {propGroups && <span className="props-close" onClick={clearSelection} title={t("viewer.deselect")}>×</span>}
+          <span className="props-close" onClick={() => (propGroups ? clearSelection() : setShowInfo(false))} title={t("viewer.deselect")}>×</span>
         </div>
         <div className="props-body">
           {propGroups ? (
@@ -1030,6 +1218,7 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
           )}
         </div>
       </aside>
+      )}
 
       {dock === "ids" && onIdsReport && (
         <IdsPanel
@@ -1058,6 +1247,44 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
           onClose={() => setDock("none")}
         />
       )}
+
+      {cadastreEnabled && dock === "geo" && (() => {
+        // Auto-centre the cadastral search on the model: map its centroid to
+        // Stereo 70 with the current georef. "known" only when the result is a
+        // real-world location (georeferenced, or geometry already in Stereo 70).
+        const c = modelCentroidRef.current;
+        const en = c ? modelToStereo70(georef, c.x, c.y, c.z) : null;
+        const known = !!en && (georef != null || inRomania(en.e, en.n));
+        return (
+          <GeorefPanel
+            modelA={modelPtA}
+            modelB={modelPtB}
+            armedSlot={armedSlot}
+            onArmModelPick={armModelPick}
+            targetA={targetA}
+            targetB={targetB}
+            armedCorner={armedCorner}
+            onArmCornerPick={armCornerPick}
+            baseGeoref={georef}
+            modelCenter={known && en ? { e: en.e, n: en.n } : null}
+            onParcelsChange={onParcelsChange}
+            selectedParcel={selectedParcel}
+            showAllLabels={showAllLabels}
+            onShowAllLabels={setShowAllLabels}
+            supportsGeoref={editor.supportsGeoref()}
+            onApply={applyGeorefLive}
+            onWriteIfc={writeGeorefToIfc}
+            onClose={() => {
+              setDock("none");
+              setArmedSlot(null);
+              alignToolRef.current?.disarm();
+              setArmedCorner(null);
+              armedCornerRef.current = null;
+              parcelLayerRef.current?.setArmed(false);
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }

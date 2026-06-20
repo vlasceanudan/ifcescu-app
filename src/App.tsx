@@ -8,8 +8,10 @@ import { UploadPanel } from "./components/UploadPanel";
 import { Viewer } from "./components/Viewer";
 import { GlobeViewer } from "./components/GlobeViewer";
 import { HelpModal } from "./components/HelpModal";
+import { SettingsModal } from "./components/SettingsModal";
 import type { IDSValidationReport } from "./ifc/ids";
 import type { BCFProject } from "./ifc/bcf";
+import type { Parcel } from "./geo/ancpi";
 
 interface Loaded {
   editor: IfcEditor;
@@ -36,10 +38,18 @@ export default function App() {
   const [theme, toggleTheme] = useTheme();
   const { lang, setLang, t } = useI18n();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
+  // Live georef, separate from loaded.georef (which stays the original so the
+  // federation list doesn't churn). The cadastral tool updates this; both the 3D
+  // viewer readouts and the globe re-place from it.
+  const [georef, setGeoref] = useState<GeorefInfo | null>(null);
+  // ANCPI parcels fetched in the cadastral panel — shared by the 3D viewer (local
+  // overlay) and the globe (real-world polygons over satellite/terrain).
+  const [parcels, setParcels] = useState<Parcel[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<"view" | "globe">("view");
   const [showHelp, setShowHelp] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   // Number of edits made to the primary IFC (drives the top-bar download button).
   const [changeCount, setChangeCount] = useState(0);
   // Favorited property names for the 3D viewer's property panel. Owned here so a
@@ -63,6 +73,8 @@ export default function App() {
     setError(null);
     setBusy(true);
     setLoaded(null);
+    setGeoref(null);
+    setParcels([]);
     setFavorites(new Set()); // reset favorites for the new model
     setIdsReport(null);
     setBcfProject(null);
@@ -73,7 +85,9 @@ export default function App() {
       // The primary model's editor lives here so edits + the download button
       // survive tab switches. The 3D viewer edits this same editor instance.
       const editor = await IfcEditor.open(bytes);
-      setLoaded({ editor, georef: editor.getGeoref(), bytes, fileName: file.name });
+      const g = editor.getGeoref();
+      setLoaded({ editor, georef: g, bytes, fileName: file.name });
+      setGeoref(g);
       setTab("view");
     } catch (e: any) {
       setError(t("app.invalidIfc", { detail: e?.message ? `(${e.message})` : "" }));
@@ -157,6 +171,9 @@ export default function App() {
           <button className="help-toggle" onClick={() => setShowHelp(true)} title={t("help.buttonTitle")}>
             ?
           </button>
+          <button className="settings-toggle" onClick={() => setShowSettings(true)} title={t("settings.buttonTitle")}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
+          </button>
           <button
             className="lang-toggle"
             onClick={() => setLang(lang === "ro" ? "en" : "ro")}
@@ -192,7 +209,8 @@ export default function App() {
             bytes={loaded.bytes}
             fileName={loaded.fileName}
             theme={theme}
-            georef={loaded.georef}
+            georef={georef}
+            onGeorefChange={setGeoref}
             favorites={favorites}
             onToggleFavorite={toggleFavorite}
             bcfProject={bcfProject}
@@ -202,15 +220,18 @@ export default function App() {
             models={viewerModels}
             onAddModel={onAddModel}
             onRemoveModel={onRemoveModel}
+            parcels={parcels}
+            onParcelsChange={setParcels}
           />
         )}
 
         {loaded && tab === "globe" && (
-          <GlobeViewer bytes={loaded.bytes} georef={loaded.georef} theme={theme} />
+          <GlobeViewer bytes={loaded.bytes} georef={georef} theme={theme} parcels={parcels} />
         )}
       </main>
 
       {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
     </div>
   );
 }

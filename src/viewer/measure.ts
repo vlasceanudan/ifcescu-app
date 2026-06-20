@@ -3,8 +3,11 @@
 // overlay projected with camera.projectToScreen each frame (no GPU line buffers).
 // Coordinates are reported in IFC model frame and, when georeferenced, Stereo 70.
 import type { ViewerEngine, SnapType } from "./engine";
+import type { ParcelLayer } from "./parcelLayer";
 import type { GeorefInfo } from "../ifc/editor";
 import { t } from "../i18n";
+import { formatLength, formatArea, coordDecimals } from "../settings/format";
+import { ovc } from "./overlayColors";
 
 export type MeasureMode = "none" | "length" | "point" | "area";
 
@@ -31,6 +34,8 @@ function modelToStereo70(g: GeorefInfo | null, p: V3): V3 {
 export class MeasureTool {
   mode: MeasureMode = "none";
   private georef: GeorefInfo | null = null;
+  /** When set, measurements can also snap to ANCPI parcel corners. */
+  private parcels: ParcelLayer | null = null;
   private pending: V3[] = []; // committed points of the in-progress measurement (renderer world)
   private hover: V3 | null = null;
   private hoverType: SnapType = "face";
@@ -62,6 +67,10 @@ export class MeasureTool {
 
   setGeoref(g: GeorefInfo | null): void {
     this.georef = g;
+  }
+  /** Allow snapping measurements to cadastral parcel corners (null disables it). */
+  setParcelLayer(p: ParcelLayer | null): void {
+    this.parcels = p;
   }
   // Kept for API parity with the old tool; RTC is handled inside the engine.
   setModelOffset(_o: unknown): void {}
@@ -115,6 +124,22 @@ export class MeasureTool {
 
   private hit(ev: MouseEvent): V3 | null {
     const s = this.engine.snap(ev.clientX, ev.clientY);
+    // Also consider the nearest parcel corner; pick whichever is closer to the
+    // cursor in screen space, so model↔cadastre measurements snap cleanly.
+    const pc = this.parcels?.snapWorld(ev.clientX, ev.clientY) ?? null;
+    if (pc) {
+      const r = this.host.getBoundingClientRect();
+      const cx = ev.clientX - r.left, cy = ev.clientY - r.top;
+      let modelDist = Infinity;
+      if (s) {
+        const sp = this.project({ x: s.point.x, y: s.point.y, z: s.point.z });
+        if (sp) modelDist = Math.hypot(sp.x - cx, sp.y - cy);
+      }
+      if (pc.dist <= modelDist) {
+        this.hoverType = "vertex";
+        return { x: pc.point.x, y: pc.point.y, z: pc.point.z };
+      }
+    }
     if (!s) return null;
     this.hoverType = s.type;
     return { x: s.point.x, y: s.point.y, z: s.point.z };
@@ -183,8 +208,8 @@ export class MeasureTool {
 
     for (const m of drawn) {
       const scr = m.pts.map((p) => this.project(p));
-      // Selected measurement: teal + thicker, to stand out from the magenta ones.
-      const col = m.selected ? "#0aa6d6" : "#e6007e";
+      // Selected measurement: teal + thicker, to stand out from the accent ones.
+      const col = m.selected ? ovc.teal() : ovc.accent();
       const sw = m.selected ? "3.5" : "2";
       const dotR = m.selected ? "5" : "3.5";
       if (m.pts.length >= 2) {
@@ -193,7 +218,7 @@ export class MeasureTool {
         const coords = scr.filter(Boolean) as { x: number; y: number }[];
         if (closed && coords.length >= 3) coords.push(coords[0]);
         pl.setAttribute("points", coords.map((c) => `${c.x},${c.y}`).join(" "));
-        pl.setAttribute("fill", m.mode === "area" && closed ? (m.selected ? "rgba(10,166,214,0.16)" : "rgba(230,0,126,0.12)") : "none");
+        pl.setAttribute("fill", m.mode === "area" && closed ? (m.selected ? "rgba(0,160,175,0.14)" : ovc.accentFill(0.10)) : "none");
         pl.setAttribute("stroke", col);
         pl.setAttribute("stroke-width", sw);
         this.svg.appendChild(pl);
@@ -271,14 +296,15 @@ export class MeasureTool {
     if (m.mode === "point" && m.pts[0] && scr[0]) {
       const ifc = this.engine.worldToIfc(m.pts[0]);
       const s = modelToStereo70(this.georef, ifc);
+      const dp = coordDecimals();
       const txt = this.georef
-        ? `E ${s.x.toFixed(3)}  N ${s.y.toFixed(3)}\nH ${s.z.toFixed(3)} m`
-        : `X ${ifc.x.toFixed(3)}\nY ${ifc.y.toFixed(3)}\nZ ${ifc.z.toFixed(3)}`;
+        ? `E ${s.x.toFixed(dp)}  N ${s.y.toFixed(dp)}\nH ${s.z.toFixed(dp)} m`
+        : `X ${ifc.x.toFixed(dp)}\nY ${ifc.y.toFixed(dp)}\nZ ${ifc.z.toFixed(dp)}`;
       this.label(txt, scr[0].x, scr[0].y);
     }
     if (m.mode === "length" && m.pts.length >= 2 && scr[0] && scr[1]) {
       const d = dist(m.pts[0], m.pts[1]);
-      this.label(`${d.toFixed(3)} m`, (scr[0].x + scr[1].x) / 2, (scr[0].y + scr[1].y) / 2);
+      this.label(formatLength(d), (scr[0].x + scr[1].x) / 2, (scr[0].y + scr[1].y) / 2);
     }
     if (m.mode === "area" && m.pts.length >= 3) {
       let per = 0;
@@ -287,7 +313,7 @@ export class MeasureTool {
       const area = polygonArea(m.pts);
       const cx = scr.reduce((a, c) => a + (c?.x ?? 0), 0) / scr.length;
       const cy = scr.reduce((a, c) => a + (c?.y ?? 0), 0) / scr.length;
-      this.label(t("measure.areaPerimeter", { area: area.toFixed(2), per: per.toFixed(2) }), cx, cy);
+      this.label(t("measure.areaPerimeter", { area: formatArea(area), per: formatLength(per) }), cx, cy);
     }
   }
 }

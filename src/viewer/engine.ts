@@ -881,6 +881,14 @@ export class ViewerEngine {
     this.renderer.requestRender();
   }
 
+  /** Switch the camera between perspective and orthographic, preserving the view. */
+  setProjection(mode: "perspective" | "orthographic"): void {
+    const cam = this.renderer.getCamera();
+    if (cam.getProjectionMode() === mode) return;
+    cam.setProjectionMode(mode);
+    this.renderer.requestRender();
+  }
+
   /** Restore a camera pose captured in a BCF viewpoint (Y-up world coords). */
   applyCameraState(s: ViewerCameraState): void {
     const cam = this.renderer.getCamera();

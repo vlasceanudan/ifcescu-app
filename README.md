@@ -4,8 +4,11 @@ A fully client-side web app to **view and edit IFC building models** in the
 browser. Inspect a model in an interactive WebGPU 3D viewer, edit element
 attributes and property/quantity values **directly in the 3D view**, add property
 sets (standard buildingSMART psets or custom ones), validate against **IDS**,
-review **BCF** topics, build pivot **data tables**, and place the model on a 3D
-**globe** in real-world context — then export an edited, non-destructive `.ifc`.
+review **BCF** topics, build pivot **data tables**, place the model on a 3D
+**globe** in real-world context, and (an opt-in experimental module) **georeference
+it onto live ANCPI cadastral parcels** — then export an edited, non-destructive
+`.ifc`. A **Settings** dialog tunes units/formatting and the 3D viewer, and gates
+experimental features.
 
 Everything runs **in the browser**: there is no backend, so it can be hosted as a
 static site (e.g. GitHub Pages). IFC parsing, geometry, mutation and export are
@@ -51,7 +54,8 @@ switchable at runtime from a button in the top-right (the choice is remembered).
   grouped by class.
 - **Measure** — length / point / area with selectable object snapping (endpoint,
   midpoint, edge, face); the point tool reports IFC X/Y/Z and Stereo 70 E/N/H when
-  georeferenced.
+  georeferenced. Length/area readouts follow the unit + decimal settings, and when
+  the cadastre module is on, snapping extends to parcel corners (measure model ↔ plot).
 - **Section** — a single clip plane created by double-clicking a face, with a
   draggable handle and size/flip controls.
 - **Data table (pivot)** — docked, resizable table that groups elements by
@@ -62,7 +66,18 @@ switchable at runtime from a button in the top-right (the choice is remembered).
 - **Globe (Cesium)** — place georeferenced models (or models already in real Stereo 70
   coordinates) on a token-free 3D world map with OSM/Esri basemaps, terrain, and an
   earth-transparency slider; a bundled **EGM2008** geoid grid provides the geoid
-  undulation readout.
+  undulation readout. Fetched cadastral parcels are draped on the terrain as polygons.
+- **Settings** — a gear-button dialog (saved to `localStorage`): **experimental
+  features** (gates the cadastre module — off by default), **units & formatting**
+  (length m/cm/mm, area m²/ha, decimals), and **3D viewer** (background, projection
+  perspective/orthographic, navigation cube, view bar, default snapping).
+- **Cadastre — ANCPI (experimental, off by default)** — enable it in Settings to
+  georeference a model onto real-world parcels: fetch ANCPI cadastral parcels
+  (Stereo 70 GeoJSON) within a radius auto-centred on the model, draw them in the 3D
+  scene and on the globe, hover/click a parcel for its number + area, then align the
+  model with a **two-point** correspondence (snap a model point + a parcel corner, ×2),
+  apply it live, and **write the `IfcMapConversion`** into the exported `.ifc`. The
+  ANCPI request is proxied in dev (`/ancpi`) to avoid CORS.
 - **Navigation** — a ViewCube overlay (click a face / drag to orbit) plus the
   keyboard shortcuts below.
 - **Language** — the whole UI switches between **Romanian (default)** and
@@ -108,6 +123,11 @@ The suite lives in `tests/`:
 
 - **`geo.test.ts`** — crs (Stereo 70 ↔ WGS84), geoid undulation, and placement-mode
   unit tests. Pure math; always runs.
+- **`align.test.ts`** — two-point georeferencing solver (rotation/translation/scale,
+  residual, round-trip back onto the targets). Pure math; always runs.
+- **`writeMapConversion.test.ts`** — STEP-text writer for the cadastre export: updates
+  an existing `IfcMapConversion`, injects one (+ `IfcProjectedCRS`) when absent, and
+  leaves IFC2x3 untouched. Always runs.
 - **`createSite.test.ts`** — `IfcEditor` round-trip on an inline minimal IFC4 model
   (edit attribute + property + new pset, then export and re-open). Self-contained;
   always runs.
@@ -128,6 +148,10 @@ All build config is in [`vite.config.ts`](vite.config.ts) (each option is commen
   references resolve correctly.
 - `vite-plugin-cesium` copies Cesium's static assets and sets `window.CESIUM_BASE_URL`
   for the globe view.
+- `server.proxy["/ancpi"]` — dev-only reverse proxy to `geoportal.ancpi.ro` so the
+  cadastre module's parcel fetch isn't blocked by CORS. In a static production build
+  there is no proxy, so the direct ANCPI call may be CORS-blocked (a backend/proxy
+  would be needed there).
 
 ## Project structure
 
@@ -152,20 +176,27 @@ src/
   components/
     Header, UploadPanel, Viewer, IfcTree, PropsPanel, EditPanel, GlobeViewer,
     ModelsPanel, NavCube, ViewBar, BcfPanel, IdsPanel, DataTablePanel,
-    DataTableConfig, Modal
+    DataTableConfig, Modal, HelpModal, SettingsModal, GeorefPanel (cadastre)
   viewer/
     engine.ts              WebGPU engine wrapper (@ifc-lite/renderer): federated load,
                            pick/render, camera + nav-cube matrices, selection outline,
-                           section indicator, snapping
+                           section indicator, snapping, projection
     model.ts               per-model spatial/class/material trees + property groups
     pivot.ts               data-table model: field discovery, aggregation, CSV export
     measure.ts             measurement tool (length/point/area) + snap glyphs
+    alignTool.ts           cadastre: snap two model points for georeferencing
+    parcelLayer.ts         cadastre: draw/snap/select ANCPI parcels in the 3D scene
+    overlayColors.ts       theme-aware colors for the SVG overlays
   geo/
     crs.ts                 Stereo 70 ↔ WGS84 (proj4)
     geoid.ts               EGM2008 geoid grid lookup
     extractGeometry.ts     pull mesh data for globe placement
     placement.ts           Stereo 70 → WGS84 + cotă; placement-mode detection
     glb.ts                 GLB builder for Cesium
+    ancpi.ts               fetch/parse ANCPI cadastral parcels (Stereo 70 GeoJSON)
+    align.ts               two-point georeferencing solver (→ IfcMapConversion values)
+    writeMapConversion.ts  splice the computed IfcMapConversion into exported STEP text
+  settings/                app settings: singleton + React provider/hook + unit format
   i18n/                    RO/EN translations: framework-agnostic singleton +
                            typed dictionaries (ro.ts/en.ts) + React provider/hook
   hooks/useTheme.ts        light/dark theme

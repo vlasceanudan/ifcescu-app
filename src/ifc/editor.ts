@@ -16,6 +16,7 @@ import { PropertyValueType, QuantityType } from "@ifc-lite/data";
 import { MutablePropertyView } from "@ifc-lite/mutations";
 import { StepExporter } from "@ifc-lite/export";
 import { parseStore, detectSchema, type IfcSchema } from "./store";
+import { writeMapConversion } from "../geo/writeMapConversion";
 
 export interface GeorefInfo {
   /** Projected CRS name, e.g. "EPSG:3844". */
@@ -89,6 +90,8 @@ const str = (v: unknown) => (v == null ? "" : String(v));
 
 export class IfcEditor {
   private view: MutablePropertyView;
+  /** Georef applied in-app (from the cadastral alignment tool); written on export. */
+  private pendingGeoref: GeorefInfo | null = null;
 
   private constructor(
     private store: IfcDataStore,
@@ -131,7 +134,7 @@ export class IfcEditor {
 
   /** True when any mutation has been recorded. */
   hasChanges(): boolean {
-    return this.view.hasChanges();
+    return this.view.hasChanges() || this.pendingGeoref != null;
   }
 
   /** Number of DISTINCT things changed (an attribute/property/set edited twice
@@ -147,7 +150,7 @@ export class IfcEditor {
             : `p:${m.entityId}:${m.psetName ?? ""}:${m.propName ?? ""}`;
       keys.add(k);
     }
-    return keys.size;
+    return keys.size + (this.pendingGeoref != null ? 1 : 0);
   }
 
   // --- selection read (edit panel) ----------------------------------------
@@ -233,7 +236,14 @@ export class IfcEditor {
     return this.schemaName !== "IFC2X3";
   }
 
+  /** Record a georef computed in-app (cadastral alignment). Written into the IFC
+   *  on export and reflected by getGeoref() so the UI shows the applied values. */
+  setGeoref(g: GeorefInfo): void {
+    this.pendingGeoref = g;
+  }
+
   getGeoref(): GeorefInfo | null {
+    if (this.pendingGeoref) return this.pendingGeoref;
     const g = extractGeoreferencingOnDemand(this.store);
     if (!g?.mapConversion) return null;
     const mc = g.mapConversion;
@@ -263,6 +273,10 @@ export class IfcEditor {
       includeRelationships: true,
       applyMutations: true,
     });
+    // @ifc-lite can't create entities, so the georef is spliced into the STEP text.
+    if (this.pendingGeoref) {
+      return writeMapConversion(result.content, this.pendingGeoref, this.schemaName).bytes;
+    }
     return result.content;
   }
 }
