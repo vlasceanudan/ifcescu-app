@@ -1,7 +1,7 @@
 import { Modal } from "./Modal";
 import { useI18n } from "../i18n/react";
 import { useSettings } from "../settings/react";
-import type { AreaUnit, LengthUnit, Projection } from "../settings/index";
+import { DEFAULTS, type AreaUnit, type LengthUnit, type Projection } from "../settings/index";
 
 /** A labelled on/off row (used for experimental toggles and viewer flags). */
 function Toggle({ checked, onChange, label, desc, badge }: { checked: boolean; onChange: (v: boolean) => void; label: string; desc?: string; badge?: string }) {
@@ -83,7 +83,51 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
               onChange={(e) => update({ viewer: { background: e.target.value } })}
             />
             <button className="btn secondary set-mini" onClick={() => update({ viewer: { background: null } })}>
-              {t("settings.backgroundReset")}
+              {t("settings.reset")}
+            </button>
+          </span>
+        </div>
+        <div className="set-row">
+          <span>{t("settings.selectionOutline")}</span>
+          <span className="set-row-ctl">
+            <input
+              type="color"
+              value={s.viewer.selection.outline}
+              onChange={(e) => update({ viewer: { selection: { outline: e.target.value } } })}
+            />
+            <button className="btn secondary set-mini" onClick={() => update({ viewer: { selection: { outline: DEFAULTS.viewer.selection.outline } } })}>
+              {t("settings.reset")}
+            </button>
+          </span>
+        </div>
+        <div className="set-row">
+          <span>{t("settings.selectionFill")}</span>
+          <span className="set-row-ctl">
+            <label className="set-snap">
+              <input
+                type="checkbox"
+                checked={s.viewer.selection.fill != null}
+                onChange={(e) => update({ viewer: { selection: { fill: e.target.checked ? s.viewer.selection.outline : null } } })}
+              />
+              {t("settings.fillEnable")}
+            </label>
+            {s.viewer.selection.fill != null && (
+              <input
+                type="color"
+                value={s.viewer.selection.fill}
+                onChange={(e) => update({ viewer: { selection: { fill: e.target.value } } })}
+              />
+            )}
+          </span>
+        </div>
+        <div className="set-row">
+          <span />
+          <span className="set-row-ctl">
+            <button
+              className="btn secondary set-mini"
+              onClick={() => update({ viewer: { background: null, selection: { outline: DEFAULTS.viewer.selection.outline, fill: null } } })}
+            >
+              {t("settings.resetColors")}
             </button>
           </span>
         </div>

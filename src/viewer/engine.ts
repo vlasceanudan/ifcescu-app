@@ -347,6 +347,11 @@ export class ViewerEngine {
     this.geom.set(m.expressId, list);
   }
 
+  /** Set the selection silhouette outline color (CSS color string). */
+  setOutlineColor(color: string): void {
+    this.outlinePath?.setAttribute("stroke", color);
+  }
+
   /** Build the lime silhouette edges (world Y-up) for the selected element(s). */
   setSelectionOutline(ids: Iterable<number>): void {
     const segs: number[] = [];

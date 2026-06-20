@@ -558,17 +558,28 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
   useEffect(() => {
     const eng = engineRef.current;
     if (!eng || !ready) return;
+    // Base layer: data-table group colors take priority, else IDS non-conforming red.
+    const map = new Map<number, [number, number, number, number]>();
     if (groupColorMap && groupColorMap.size) {
-      eng.setColorOverrideMap(groupColorMap);
+      for (const [id, c] of groupColorMap) map.set(id, c);
     } else if (idsReport) {
-      const failing = new Set<number>();
       for (const spec of idsReport.specificationResults)
-        for (const e of spec.entityResults) if (!e.passed) failing.add(e.expressId);
-      eng.setColorOverrides(failing, IDS_FAIL_COLOR);
-    } else {
-      eng.clearColorOverrides();
+        for (const e of spec.entityResults) if (!e.passed) map.set(e.expressId, IDS_FAIL_COLOR);
     }
-  }, [groupColorMap, idsReport, ready]);
+    // Selection fill tints the selected elements on top (when a fill color is set).
+    const fill = settings.viewer.selection.fill;
+    if (fill && selectedIds.size) {
+      const c = hexToRgba(fill);
+      for (const id of selectedIds) map.set(id, c);
+    }
+    if (map.size) eng.setColorOverrideMap(map);
+    else eng.clearColorOverrides();
+  }, [groupColorMap, idsReport, ready, selectedIds, settings.viewer.selection.fill]);
+
+  // Selection outline color follows the setting.
+  useEffect(() => {
+    engineRef.current?.setOutlineColor(settings.viewer.selection.outline);
+  }, [settings.viewer.selection.outline, ready]);
 
   // IDS → BCF: one topic per failing entity, merged into the shared project,
   // then flip the dock to BCF so the new topics are visible.

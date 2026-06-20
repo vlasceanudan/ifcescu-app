@@ -18,6 +18,8 @@ export interface Settings {
     viewBar: boolean;
     projection: Projection;
     snap: { vertex: boolean; midpoint: boolean; edge: boolean; face: boolean };
+    /** Selection highlight colors: outline (silhouette) and an optional fill tint. */
+    selection: { outline: string; fill: string | null };
   };
 }
 
@@ -30,6 +32,7 @@ export const DEFAULTS: Settings = {
     viewBar: true,
     projection: "perspective",
     snap: { vertex: true, midpoint: true, edge: true, face: true },
+    selection: { outline: "#bcf124", fill: null },
   },
 };
 
@@ -45,6 +48,7 @@ function merge(base: Settings, patch: any): Settings {
       ...base.viewer,
       ...patch.viewer,
       snap: { ...base.viewer.snap, ...(patch.viewer?.snap ?? {}) },
+      selection: { ...base.viewer.selection, ...(patch.viewer?.selection ?? {}) },
     },
   };
 }
