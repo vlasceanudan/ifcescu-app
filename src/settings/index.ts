@@ -52,7 +52,13 @@ function merge(base: Settings, patch: any): Settings {
 function load(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return merge(DEFAULTS, JSON.parse(raw));
+    if (raw) {
+      const merged = merge(DEFAULTS, JSON.parse(raw));
+      // Experimental features are session-only: they always start disabled on app
+      // load and must be re-enabled from Settings (so e.g. the Cadastre tab never
+      // appears just because it was on last time). Other settings persist.
+      return { ...merged, experimental: { ...DEFAULTS.experimental } };
+    }
   } catch {
     /* localStorage unavailable or corrupt JSON — fall back to defaults */
   }
