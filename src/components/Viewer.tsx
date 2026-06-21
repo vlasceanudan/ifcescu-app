@@ -313,6 +313,10 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
   const [groupColorMap, setGroupColorMap] = useState<Map<number, Rgba> | null>(null);
   // "Color by model" (left panel): paints each federated model a distinct color.
   const [colorByModel, setColorByModel] = useState(false);
+  // Suppress the persistent auto overlays (IDS red, color-by-model) — set by the
+  // BCF "reset view" so the model returns fully neutral; cleared when the user
+  // re-enables an overlay (new IDS run / color-by-model on).
+  const [baseColorsOff, setBaseColorsOff] = useState(false);
   // B4: locally-saved viewpoints (camera + visibility), persisted per file.
   const [viewpoints, setViewpoints] = useState<Viewpoint[]>([]);
   const vpSeq = useRef(0);
@@ -662,13 +666,13 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
     const map = new Map<number, [number, number, number, number]>();
     if (groupColorMap && groupColorMap.size) {
       for (const [id, c] of groupColorMap) map.set(id, c);
-    } else if (colorByModel) {
+    } else if (!baseColorsOff && colorByModel) {
       let i = 0;
       for (const rec of modelStoresRef.current.values()) {
         const c = groupColor(i++);
         for (const g of rec.globalIDs) map.set(g, c);
       }
-    } else if (idsReport) {
+    } else if (!baseColorsOff && idsReport) {
       for (const spec of idsReport.specificationResults)
         for (const e of spec.entityResults) if (!e.passed) map.set(e.expressId, IDS_FAIL_COLOR);
     }
@@ -680,7 +684,10 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
     }
     if (map.size) eng.setColorOverrideMap(map);
     else eng.clearColorOverrides();
-  }, [groupColorMap, colorByModel, idsReport, ready, selectedIds, settings.viewer.selection.fill]);
+  }, [groupColorMap, colorByModel, idsReport, baseColorsOff, ready, selectedIds, settings.viewer.selection.fill]);
+
+  // A fresh IDS run should reveal its coloring even after a previous reset.
+  useEffect(() => { if (idsReport) setBaseColorsOff(false); }, [idsReport]);
 
   // Selection outline color follows the setting.
   useEffect(() => {
@@ -1163,6 +1170,15 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
     return [parseInt(h.slice(o, o + 2), 16) / 255, parseInt(h.slice(o + 2, o + 4), 16) / 255, parseInt(h.slice(o + 4, o + 6), 16) / 255, a / 255];
   };
 
+  // Reset the scene after a BCF viewpoint: restore full visibility, drop the
+  // viewpoint coloring and clear the selection.
+  const onResetView = () => {
+    showAll();
+    setGroupColorMap(null);
+    setBaseColorsOff(true); // also drop the IDS / color-by-model overlays
+    selectIds([]);
+  };
+
   // Apply a BCF viewpoint to the scene: camera, isolation, coloring and selection
   // — so opening a topic (clash/IDS/manual) reproduces its view, not just selects.
   const onApplyViewpoint = (vp: BCFViewpoint) => {
@@ -1242,7 +1258,7 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
           onRemove={onRemoveModel}
           onAddModel={onAddModel}
           colorByModel={colorByModel}
-          onColorByModel={setColorByModel}
+          onColorByModel={(v) => { setColorByModel(v); if (v) setBaseColorsOff(false); }}
           height={modelsHeight}
         />
         <div className="models-resize" onMouseDown={startModelsResize} title={t("viewer.resizeModels")} />
@@ -1619,6 +1635,7 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
           fileName={fileName}
           selectedIds={[...selectedIds]}
           onApplyViewpoint={onApplyViewpoint}
+          onResetView={onResetView}
           bcfProject={bcfProject ?? null}
           onBcfProject={(p) => onBcfProject?.(p)}
           onClose={() => setDock("none")}

@@ -35,11 +35,20 @@ export {
 export type {
   BCFProject,
   BCFTopic,
+  BCFComment,
   BCFViewpoint,
   ViewerCameraState,
   ViewerBounds,
   IDSBCFExportOptions,
 } from "@ifc-lite/bcf";
+
+/** Remove a topic from a project (symmetric with addTopicToProject). */
+export function removeTopicFromProject(
+  project: import("@ifc-lite/bcf").BCFProject,
+  guid: string,
+): void {
+  project.topics.delete(guid);
+}
 
 /** Single-model identifier used for BCF modelId and the "modelId:expressId" keys. */
 export const MODEL_ID = "model";

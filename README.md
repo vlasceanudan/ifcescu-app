@@ -94,9 +94,13 @@ switchable at runtime from a button in the top-right (the choice is remembered).
   IDS in-app**: the IDS creator (✎) builds specifications across all six facets
   (Entity/Attribute/Property/Classification/Material/PartOf), exports a `.ids`, loads an
   existing one to edit, and validates directly against the model.
-- **BCF** — create topics from the current view, import/export `.bcfzip`, and **open a topic's
-  viewpoint** (↗ 3D) to reproduce it in 3D: camera + isolation + coloring + selection (so topics
-  generated from IDS validation or clash detection restore their exact view).
+- **BCF** — full topic collaboration: create topics from the current view, **add comments** (optionally
+  with the current view attached), **edit status / type / priority / assignee / due date**, and **delete**
+  topics; import/export `.bcfzip`; and **open a topic's viewpoint** (↗ 3D) to reproduce it in 3D — camera
+  + isolation + coloring + selection (so topics generated from IDS validation or clash detection restore
+  their exact view), with a **Reset the view** button that returns the model to a neutral state (full
+  visibility, no isolation/coloring/selection, including the IDS overlay). BCF enum values are kept
+  verbatim for round-trip fidelity.
 - **Globe (Cesium)** — place georeferenced models (or models already in real Stereo 70
   coordinates) on a token-free 3D world map with OSM/Esri basemaps, terrain, and an
   earth-transparency slider; a bundled **EGM2008** geoid grid provides the geoid
