@@ -101,10 +101,15 @@ switchable at runtime from a button in the top-right (the choice is remembered).
 
 | Key | Action | Key | Action |
 |-----|--------|-----|--------|
-| `1`–`6` | Top / bottom / front / back / left / right view | `E` | Toggle the attribute/property editor on the selection |
-| `Z` | Zoom to selection (fit extents) | `S` | Toggle the section plane |
-| `F` | Frame the selection | `H` | Hide / restore the selection |
-| `I` | Isolate the selection | `Esc` | Cancel the active command |
+| `1`–`6` | Top / bottom / front / back / left / right view | `0` | Isometric view |
+| `Z` | Fit all | `C` | Frame the selection |
+| `+` / `-` | Zoom in / out | `H` | Hide / restore the selection |
+| `L` | Isolate the selection | `A` | Show all |
+| `S` | Toggle the section plane | `O` | Toggle perspective / orthographic |
+| `E` | Toggle the attribute/property editor | `M` | Measure tool (distance) |
+| `T` | Toggle the data table | `B` | Toggle the BCF panel |
+| `I` | Toggle the IDS panel | `F` | Open the Filter |
+| `/` | Focus the tree search | `Esc` | Cancel the active command |
 | `Delete` / `Backspace` | Delete the active measurement | | |
 
 > Shortcuts are ignored while typing in an input field.

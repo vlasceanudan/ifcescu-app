@@ -179,8 +179,12 @@ function VisIcon({ kind }: { kind: "hide" | "isolate" | "frame" | "show" }) {
 
 export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, favorites, onToggleFavorite, bcfProject, onBcfProject, idsReport, onIdsReport, models, onAddModel, onRemoveModel, onGeorefChange, parcels, onParcelsChange }: Props) {
   const { t, lang } = useI18n();
-  const { settings } = useSettings();
+  const { settings, update } = useSettings();
   const cadastreEnabled = settings.experimental.cadastre;
+  // Mirrors the current projection so the empty-deps keydown handler reads a fresh
+  // value when toggling with "O" (avoids a stale closure).
+  const projectionRef = useRef(settings.viewer.projection);
+  projectionRef.current = settings.viewer.projection;
   const hostRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -542,16 +546,39 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
         setStatus("Comandă anulată (Esc).");
       } else if (e.key === "h" || e.key === "H") {
         toggleHideSelection();
+      } else if (e.key === "a" || e.key === "A") {
+        showAll();
       } else if (e.key === "z" || e.key === "Z") {
         engineRef.current?.fit();
-      } else if (e.key === "f" || e.key === "F") {
-        if (selectedRef.current.size) engineRef.current?.zoomToSelection(selectedRef.current);
-      } else if (e.key === "i" || e.key === "I") {
-        if (selectedRef.current.size) isolateIds([...selectedRef.current]);
+      } else if (e.key === "c" || e.key === "C") {
+        if (selectedRef.current.size) engineRef.current?.zoomToSelection(selectedRef.current); // frame selection
+      } else if (e.key === "l" || e.key === "L") {
+        if (selectedRef.current.size) isolateIds([...selectedRef.current]); // isolate selection
       } else if (e.key === "s" || e.key === "S") {
         toggleSection();
       } else if (e.key === "e" || e.key === "E") {
         toggleEditRef.current(); // toggle the attribute/property editor
+      } else if (e.key === "m" || e.key === "M") {
+        chooseMeasure("length");
+      } else if (e.key === "t" || e.key === "T") {
+        setTableOpen((o) => !o);
+      } else if (e.key === "b" || e.key === "B") {
+        setDock((d) => (d === "bcf" ? "none" : "bcf"));
+      } else if (e.key === "i" || e.key === "I") {
+        setDock((d) => (d === "ids" ? "none" : "ids"));
+      } else if (e.key === "f" || e.key === "F") {
+        setFilterOpen(true);
+      } else if (e.key === "o" || e.key === "O") {
+        update({ viewer: { projection: projectionRef.current === "perspective" ? "orthographic" : "perspective" } });
+      } else if (e.key === "/") {
+        e.preventDefault();
+        (document.querySelector(".ifctree-search input") as HTMLInputElement | null)?.focus();
+      } else if (e.key === "+" || e.key === "=") {
+        e.preventDefault();
+        engineRef.current?.zoomBy(-200);
+      } else if (e.key === "-") {
+        e.preventDefault();
+        engineRef.current?.zoomBy(200);
       } else if (e.key === "Delete" || e.key === "Backspace") {
         if (measureRef.current?.hasSelection()) { e.preventDefault(); measureRef.current.deleteSelected(); }
       } else if (e.key === "1") {
@@ -566,6 +593,8 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
         engineRef.current?.setPresetView("left");
       } else if (e.key === "6") {
         engineRef.current?.setPresetView("right");
+      } else if (e.key === "0") {
+        engineRef.current?.setViewDirection([1, 1, 1]); // isometric
       }
     };
     window.addEventListener("keydown", onKey);
@@ -669,13 +698,17 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
       if (measure && measure.selectAt(ev.clientX, ev.clientY)) { clearSelection(); return; }
       const engine = engineRef.current;
       if (!engine) return;
+      const additive = ev.shiftKey; // Shift+click → multi-select (toggle)
       const hit = await engine.pick(ev.clientX, ev.clientY);
       if (hit && hit.expressId != null) {
-        selectIds([hit.expressId], hit.expressId);
-        parcelLayerRef.current?.clearSelection();
-        setSelectedParcel(null);
-      } else {
-        // Clicking empty space over a parcel selects the parcel instead.
+        selectIds([hit.expressId], hit.expressId, additive);
+        if (!additive) {
+          parcelLayerRef.current?.clearSelection();
+          setSelectedParcel(null);
+        }
+      } else if (!additive) {
+        // Clicking empty space (without Shift) over a parcel selects the parcel,
+        // else clears. Shift+empty keeps the current selection.
         const info = parcelLayerRef.current?.selectAt(ev.clientX, ev.clientY) ?? null;
         clearSelection();
         setSelectedParcel(info);
@@ -741,15 +774,33 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
   const isPrimary = (modelId: string) => modelId === primaryId;
 
   // --- selection ----------------------------------------------------------
-  const selectIds = (ids: number[], expressID?: number) => {
+  // `additive` (Shift+click) toggles the given ids into the current selection
+  // instead of replacing it, for multi-select in the 3D viewer.
+  const selectIds = (ids: number[], expressID?: number, additive = false) => {
     if (ids.length) lastHiddenRef.current = [];
-    selectedRef.current = new Set(ids);
-    setSelectedIds(new Set(ids));
-    engineRef.current?.setSelectionOutline(ids);
+    let next: number[];
+    if (additive) {
+      const cur = new Set(selectedRef.current);
+      for (const id of ids) (cur.has(id) ? cur.delete(id) : cur.add(id));
+      next = [...cur];
+    } else {
+      next = ids;
+    }
+    selectedRef.current = new Set(next);
+    setSelectedIds(new Set(next));
+    engineRef.current?.setSelectionOutline(next);
     // Selecting something new exits any active edit form.
     setEditing(false);
     setEditDetail(null);
-    const propId = expressID ?? (ids.length === 1 ? ids[0] : undefined);
+    // The clicked element drives the properties panel — but only if it's still
+    // selected after an additive toggle; otherwise fall back to a lone selection.
+    const clicked = expressID ?? (ids.length === 1 ? ids[0] : undefined);
+    const propId =
+      clicked != null && selectedRef.current.has(clicked)
+        ? clicked
+        : next.length === 1
+          ? next[0]
+          : undefined;
     // Route the global id back to its owning model's store for properties.
     const r = propId != null ? engineRef.current?.resolveGlobal(propId) : null;
     if (r) {
