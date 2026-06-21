@@ -44,6 +44,8 @@ export const ro = {
     cadastreDesc: "Georeferențiere și parcele cadastrale ANCPI în vizualizator.",
     bsddLabel: "Modul bSDD",
     bsddDesc: "Atribuie clasificări și proprietăți din buildingSMART Data Dictionary (online).",
+    analyticsLabel: "Modul Analiză",
+    analyticsDesc: "Tablou de bord vizual (tip Power BI) cu vizuale mutabile și filtrare reflectată în 3D.",
     unitsTitle: "Unități și format",
     unitLength: "Unitate lungime",
     unitArea: "Unitate suprafață",
@@ -148,6 +150,28 @@ export const ro = {
   boq: {
     title: "Antemăsurătoare",
     generated: "generat la",
+  },
+  analytics: {
+    tab: "Analiză",
+    title: "Analiză date",
+    ofTotal: "din {total} elemente",
+    clearFilter: "Resetează",
+    addChart: "Adaugă grafic",
+    removeChart: "Șterge graficul",
+    count: "Număr",
+    sum: "Sumă",
+    stackBy: "Stivuiește după…",
+    pickStack: "Alege a doua dimensiune.",
+    pickNumeric: "Alege o cantitate numerică.",
+    noData: "Nicio dată pentru această dimensiune.",
+    type: {
+      bar: "Bare",
+      donut: "Inel",
+      treemap: "Treemap",
+      stacked: "Bare stivuite",
+      histogram: "Histogramă",
+      kpi: "Indicator (KPI)",
+    },
   },
   bsdd: {
     title: "Atribuie din bSDD",
@@ -476,6 +500,9 @@ export const ro = {
     dataTableTitle: "Tabel de date",
     dataTableBody:
       "• Grupează elementele după model / clasă / material / proprietate / cantitate.\n• Agregă coloane de valori (sumă/medie/număr/min/max), cu rând de total.\n• Click pe un rând selectează elementele în 3D; colorează 3D după prima grupare.\n• Antemăsurătoare: presetul (riglă) grupează pe clasă → material și însumează cantitățile de bază; raportul printabil (imprimantă) deschide o pagină pentru salvare ca PDF; export CSV (pagină).",
+    analyticsTitle: "Analiză (experimental)",
+    analyticsBody:
+      "• Se activează din Setări → Funcționalități experimentale; implicit este ascuns.\n• Butonul Analiză deschide un dashboard într-un panou jos redimensionabil (trage de marginea de sus), cu 3D-ul vizibil deasupra; vizualele se pot muta și redimensiona (drag & resize), ca un raport Power BI.\n• Tipuri: bare, inel, treemap, bare stivuite (2 dimensiuni), histogramă (distribuția unei cantități) și indicatoare KPI. Fiecare vizual: alege dimensiunea, măsura (număr/sumă) și tipul.\n• Click pe o categorie filtrează TOT: celelalte grafice se recalculează (cross-filter) și 3D-ul izolează + colorează elementele. Combinare SAU în același grafic, ȘI între grafice; la barele stivuite, click pe legendă filtrează după a doua dimensiune.\n• „Resetează” readuce tot.",
     filterTitle: "Filtrare & selecție",
     filterBody:
       "• Butonul Filtru deschide un constructor de reguli: tip IFC (una din mai multe clase), proprietate (set + nume + operator + valoare) sau nume (conține / egal / regex).\n• Combinați regulile cu ȘI / SAU.\n• Apăsați Selectează sau Izolează — elementele potrivite se selectează / izolează în 3D.",

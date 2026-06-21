@@ -48,6 +48,13 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
           desc={t("settings.bsddDesc")}
           badge={t("settings.badge")}
         />
+        <Toggle
+          checked={s.experimental.analytics}
+          onChange={(v) => update({ experimental: { analytics: v } })}
+          label={t("settings.analyticsLabel")}
+          desc={t("settings.analyticsDesc")}
+          badge={t("settings.badge")}
+        />
       </section>
 
       {/* Units & formatting */}

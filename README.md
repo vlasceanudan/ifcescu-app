@@ -67,6 +67,13 @@ switchable at runtime from a button in the top-right (the choice is remembered).
   (sum/avg/count/min/max), with row→3D selection and CSV export. A **bill-of-quantities**
   preset groups by class → material and sums the base quantities, and a **printable
   report** opens a styled page you can save as PDF.
+- **Analytics dashboard (Power BI-style, experimental, off by default)** — enable it in Settings; it opens a
+  **resizable bottom dock** (the 3D stays visible above) with movable, resizable visuals (bars, donut, treemap,
+  stacked bars by two dimensions, quantity histogram, KPI cards) over any dimension (class, material, property,
+  quantity) with count or sum measures, built on the same pivot layer. Clicking a category **cross-filters every
+  other visual** (they recompute) **and** the 3D viewer (isolates + colors the matching elements; OR within a
+  chart, AND across charts). A dependency-free drag/resize grid; charts via Recharts — lazy-loaded so it stays
+  out of the initial bundle.
 - **Filter & select** — a rule-based query builder (IFC type *is one of*, property
   `pset.name operator value`, or name contains/equals/regex) combined with AND/OR; Run
   to **select or isolate** the matches in 3D.
@@ -80,7 +87,7 @@ switchable at runtime from a button in the top-right (the choice is remembered).
   earth-transparency slider; a bundled **EGM2008** geoid grid provides the geoid
   undulation readout. Fetched cadastral parcels are draped on the terrain as polygons.
 - **Settings** — a gear-button dialog (saved to `localStorage`): **experimental
-  features** (gates the cadastre module — off by default), **units & formatting**
+  features** (gates the cadastre, bSDD and analytics modules — off by default), **units & formatting**
   (length m/cm/mm, area m²/ha, decimals), and **3D viewer** (background, projection
   perspective/orthographic, navigation cube, view bar, default snapping).
 - **bSDD (experimental, off by default)** — enable it in Settings to connect to the online
@@ -210,13 +217,14 @@ src/
     ModelsPanel, NavCube, ViewBar, BcfPanel, IdsPanel, DataTablePanel,
     DataTableConfig, Modal, HelpModal, SettingsModal, ErrorBoundary, GeorefPanel
     (cadastre), IdsEditorModal (IDS creator), FilterModal (filter & select),
-    BsddModal (bSDD classifier — experimental)
+    BsddModal (bSDD classifier — experimental), AnalyticsPanel (charts dashboard)
   viewer/
     engine.ts              WebGPU engine wrapper (@ifc-lite/renderer): federated load,
                            pick/render, camera + nav-cube matrices, selection outline,
                            section indicator, snapping, projection
     model.ts               per-model spatial/class/material trees + property groups
     pivot.ts               data-table model: field discovery, aggregation, CSV export
+    analytics.ts           analytics chart data + cross-filter logic (reuses pivot)
     boqReport.ts           bill-of-quantities preset + printable (PDF) HTML report
     measure.ts             measurement tool (length/point/area) + snap glyphs
     alignTool.ts           cadastre: snap two model points for georeferencing

@@ -1,4 +1,4 @@
-import { type ReactNode, type CSSProperties, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, type CSSProperties, type MouseEvent as ReactMouseEvent, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { IfcDataStore } from "@ifc-lite/parser";
 import type { ViewerCameraState } from "@ifc-lite/bcf";
 import type { Theme } from "../hooks/useTheme";
@@ -31,6 +31,8 @@ import type { IDSValidationReport, IDSDocument } from "../ifc/ids";
 import { IdsEditorModal } from "./IdsEditorModal";
 import { FilterModal } from "./FilterModal";
 import { BsddModal } from "./BsddModal";
+// Lazy so Recharts only loads when the analytics panel is opened.
+const AnalyticsPanel = lazy(() => import("./AnalyticsPanel"));
 import { createBCFFromIDSReport, addTopicToProject, type BCFProject } from "../ifc/bcf";
 
 // Non-conforming IDS elements are painted this red in the 3D view.
@@ -183,7 +185,9 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
   const { settings, update } = useSettings();
   const cadastreEnabled = settings.experimental.cadastre;
   const bsddEnabled = settings.experimental.bsdd;
+  const analyticsEnabled = settings.experimental.analytics;
   const [bsddOpen, setBsddOpen] = useState(false);
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
   // Mirrors the current projection so the empty-deps keydown handler reads a fresh
   // value when toggling with "O" (avoids a stale closure).
   const projectionRef = useRef(settings.viewer.projection);
@@ -1070,6 +1074,18 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   };
+
+  // Drive the 3D scene from the analytics dashboard: isolate + color the matched
+  // set, or reset when the selection is cleared.
+  const onAnalyticsFilter = (ids: number[] | null, colors: Map<number, Rgba> | null) => {
+    if (ids === null) {
+      showAll();
+      setGroupColorMap(null);
+    } else {
+      isolateIds(ids);
+      setGroupColorMap(colors && colors.size ? colors : null);
+    }
+  };
   const startModelsResize = (e: ReactMouseEvent) => {
     e.preventDefault();
     // The panel sits directly before the divider; measure from its top edge so the
@@ -1263,6 +1279,13 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
             <span>Tabel</span>
           </button>
 
+          {analyticsEnabled && (
+            <button className={"vbtn" + (analyticsOpen ? " active" : "")} onClick={() => setAnalyticsOpen((o) => !o)} title={t("analytics.title")}>
+              <span className="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><rect x="7" y="11" width="3" height="6" /><rect x="12" y="7" width="3" height="10" /><rect x="17" y="13" width="3" height="4" /></svg></span>
+              <span>{t("analytics.tab")}</span>
+            </button>
+          )}
+
 
           {cadastreEnabled && (
             <button className={"vbtn" + (dock === "geo" ? " active" : "")} onClick={() => setDock((d) => (d === "geo" ? "none" : "geo"))}>
@@ -1288,6 +1311,11 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
 
         <div className="viewer-host" ref={hostRef} style={{ position: "relative" }}>
           <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
+          {analyticsEnabled && analyticsOpen && ready && pivotModels.length > 0 && (
+            <Suspense fallback={<div className="an-dock" style={{ height: 380 }} />}>
+              <AnalyticsPanel models={pivotModels} onFilter={onAnalyticsFilter} onClose={() => setAnalyticsOpen(false)} />
+            </Suspense>
+          )}
           {ready && settings.viewer.navCube && (
             <NavCube
               getTransform={() => engineRef.current?.cubeMatrix() ?? ""}

@@ -40,6 +40,8 @@ export const en: Dict = {
     cadastreDesc: "ANCPI cadastral georeferencing and parcels in the viewer.",
     bsddLabel: "bSDD module",
     bsddDesc: "Assign classifications and properties from the buildingSMART Data Dictionary (online).",
+    analyticsLabel: "Analytics module",
+    analyticsDesc: "Visual dashboard (Power BI-like) with movable visuals and filtering reflected in 3D.",
     unitsTitle: "Units & formatting",
     unitLength: "Length unit",
     unitArea: "Area unit",
@@ -144,6 +146,28 @@ export const en: Dict = {
   boq: {
     title: "Bill of Quantities",
     generated: "generated on",
+  },
+  analytics: {
+    tab: "Analytics",
+    title: "Data analytics",
+    ofTotal: "of {total} elements",
+    clearFilter: "Reset",
+    addChart: "Add chart",
+    removeChart: "Remove chart",
+    count: "Count",
+    sum: "Sum",
+    stackBy: "Stack by…",
+    pickStack: "Pick a second dimension.",
+    pickNumeric: "Pick a numeric quantity.",
+    noData: "No data for this dimension.",
+    type: {
+      bar: "Bars",
+      donut: "Donut",
+      treemap: "Treemap",
+      stacked: "Stacked bars",
+      histogram: "Histogram",
+      kpi: "KPI",
+    },
   },
   bsdd: {
     title: "Assign from bSDD",
@@ -472,6 +496,9 @@ export const en: Dict = {
     dataTableTitle: "Data table",
     dataTableBody:
       "• Group elements by model / class / material / property / quantity.\n• Aggregate value columns (sum/avg/count/min/max), with a totals row.\n• Click a row to select the elements in 3D; color 3D by the first grouping.\n• Bill of quantities: the preset (ruler) groups by class → material and sums the base quantities; the printable report (printer) opens a page you can save as PDF; export CSV (page).",
+    analyticsTitle: "Analytics (experimental)",
+    analyticsBody:
+      "• Enabled from Settings -> Experimental features; hidden by default.\n• The Analytics button opens a dashboard in a resizable bottom dock (drag the top edge), with the 3D visible above it; visuals can be moved and resized (drag & resize), like a Power BI report.\n• Types: bars, donut, treemap, stacked bars (2 dimensions), histogram (quantity distribution) and KPI cards. Each visual: pick the dimension, the measure (count/sum) and the type.\n• Clicking a category filters everything: the other charts recompute (cross-filter) and the 3D isolates + colors the elements. Combine OR within a chart, AND across charts; on stacked bars, clicking the legend filters by the second dimension.\n• \"Reset\" brings everything back.",
     filterTitle: "Filter & select",
     filterBody:
       "• The Filter button opens a rule builder: IFC type (one of several classes), property (set + name + operator + value), or name (contains / equals / regex).\n• Combine rules with AND / OR.\n• Press Select or Isolate — the matching elements are selected / isolated in 3D.",

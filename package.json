@@ -22,7 +22,8 @@
     "cesium": "^1.142.0",
     "proj4": "^2.20.9",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "recharts": "^3.8.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

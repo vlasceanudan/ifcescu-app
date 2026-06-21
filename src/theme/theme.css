@@ -2944,3 +2944,84 @@ table.summary td.k {
 .bsdd-prop-name { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bsdd-prop-type { font-size: 0.72rem; color: var(--muted); flex: 0 0 auto; }
 .bsdd-prop-value { flex: 0 0 200px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; color: var(--text); outline: none; }
+
+/* Analytics dashboard — bottom dock so the 3D model stays visible above it. */
+.an-dock {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -6px 22px rgba(0, 0, 0, 0.18);
+}
+.an-dock-resize {
+  flex: 0 0 auto;
+  height: 7px;
+  cursor: row-resize;
+  background: var(--surface-2);
+}
+.an-dock-resize:hover { background: var(--accent); }
+.an-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.an-title { font-weight: 700; }
+.an-kpi-inline { font-size: 0.85rem; color: var(--muted); }
+.an-kpi-inline b { color: var(--text); font-size: 1rem; }
+.an-clear, .an-bar-btn {
+  background: none; border: 1px solid var(--border); border-radius: 8px;
+  padding: 5px 10px; font-size: 0.8rem; color: var(--text); cursor: pointer;
+}
+.an-clear { color: var(--accent); }
+.an-clear:hover, .an-bar-btn:hover { background: var(--surface-2); }
+.an-canvas { flex: 1; overflow: auto; position: relative; }
+.an-grid { position: relative; width: 100%; min-height: 100%; }
+.an-tile {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.an-tile-head {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  cursor: move;
+}
+.an-tile-head select {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  padding: 3px 6px; font-size: 0.74rem; color: var(--text); cursor: pointer; outline: none; max-width: 130px;
+}
+.an-tile-x { margin-left: auto; cursor: pointer; color: var(--muted); font-size: 1.05rem; padding: 0 4px; }
+.an-tile-x:hover { color: var(--danger, #d33); }
+.an-tile-body { flex: 1; min-height: 0; padding: 6px; }
+.an-tile-resize {
+  position: absolute; right: 0; bottom: 0; width: 16px; height: 16px;
+  cursor: se-resize; touch-action: none;
+}
+.an-tile-resize::after {
+  content: ""; position: absolute; right: 3px; bottom: 3px; width: 6px; height: 6px;
+  border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+}
+.an-empty { display: flex; align-items: center; justify-content: center; height: 100%; text-align: center; color: var(--muted); font-size: 0.82rem; }
+.an-kpi-card { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; }
+.an-kpi-big { font-size: 2.2rem; font-weight: 800; color: var(--text); line-height: 1.1; }
+.an-kpi-cap { font-size: 0.78rem; color: var(--muted); margin-top: 4px; text-align: center; }
