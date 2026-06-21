@@ -1,5 +1,7 @@
 import { useRef } from "react";
 import { useI18n } from "../i18n/react";
+// Inlined so the "building" letters (fill:currentColor) follow the theme color.
+import logoRaw from "../../public/logo_bsro.svg?raw";
 
 interface Props {
   onFile: (file: File) => void;
@@ -40,7 +42,7 @@ export function UploadPanel({ onFile, variant = "drop" }: Props) {
 
   return (
     <div className="upload-card">
-      <div className="upload-icon">🧊</div>
+      <div className="upload-logo" dangerouslySetInnerHTML={{ __html: logoRaw }} />
       <h2>IFCescu</h2>
       <p className="upload-sub">{t("upload.sub")}</p>
       <div

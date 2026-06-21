@@ -166,6 +166,19 @@ body {
 .upload-icon {
   font-size: 2.4rem;
 }
+.upload-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* colour used by the "building" letters (fill: currentColor) */
+  color: var(--logo-building);
+  margin-bottom: 6px;
+}
+.upload-logo svg {
+  height: 56px;
+  width: auto;
+  display: block;
+}
 .upload-sub {
   color: var(--muted);
   margin: 0 0 18px;
