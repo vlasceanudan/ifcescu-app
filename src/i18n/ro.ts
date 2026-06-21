@@ -190,6 +190,7 @@ export const ro = {
     docTitle: "Titlu document",
     titlePh: "ex. Cerințe livrare structură",
     author: "Autor",
+    authorInvalid: "Autorul trebuie să fie un email valid (cerut de standardul IDS); altfel e omis la export.",
     specs: "Specificații",
     unnamedSpec: "(fără nume)",
     duplicate: "Duplică",

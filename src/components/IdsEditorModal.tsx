@@ -176,6 +176,9 @@ export function IdsEditorModal({ schema, pivotModels, initialDoc, onValidate, on
           <div className="field">
             <label>{t("idsEditor.author")}</label>
             <input value={doc.info.author ?? ""} onChange={(e) => update((d) => { d.info.author = e.target.value || undefined; })} placeholder="email@example.com" />
+            {!!doc.info.author && !/^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(doc.info.author) && (
+              <div className="idse-issue error">{t("idsEditor.authorInvalid")}</div>
+            )}
           </div>
 
           <div className="idse-list-head">

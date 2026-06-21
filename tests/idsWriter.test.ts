@@ -72,6 +72,13 @@ describe("serializeIds", () => {
     expect(parseIdsXml(xml).specifications[0].ifcVersions).toContain("IFC4X3");
   });
 
+  it("omits a non-email author (IDS XSD requires an email)", () => {
+    const bad: IDSDocument = { info: { title: "t", author: "12" }, specifications: [{ id: "s", name: "s", ifcVersions: ["IFC4"], applicability: { facets: [{ type: "entity", name: { type: "simpleValue", value: "IFCWALL" } }] }, requirements: [] }] };
+    expect(serializeIds(bad)).not.toContain("<author>");
+    const ok: IDSDocument = { ...bad, info: { title: "t", author: "a@b.com" } };
+    expect(serializeIds(ok)).toContain("<author>a@b.com</author>");
+  });
+
   it("round-trips: parse(serialize(doc)) preserves the structure", () => {
     const back = parseIdsXml(serializeIds(DOC));
     expect(back.specifications).toHaveLength(2);

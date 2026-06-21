@@ -130,10 +130,11 @@ function specLines(spec: IDSSpecification): string[] {
   if (spec.instructions) attrs.push(`instructions="${esc(spec.instructions)}"`);
 
   // Spec cardinality (minOccurs/maxOccurs) lives on <applicability> in IDS 1.0.
-  const appAttrs: string[] = [];
-  if (spec.minOccurs != null) appAttrs.push(`minOccurs="${esc(String(spec.minOccurs))}"`);
-  if (spec.maxOccurs != null) appAttrs.push(`maxOccurs="${esc(String(spec.maxOccurs))}"`);
-  const appA = appAttrs.length ? " " + appAttrs.join(" ") : "";
+  // Always emit both: some validators (IfcTester) crash deriving the cardinality
+  // when they're absent. Default to "optional" applicability (0..unbounded).
+  const minOcc = spec.minOccurs != null ? spec.minOccurs : 0;
+  const maxOcc = spec.maxOccurs != null ? spec.maxOccurs : "unbounded";
+  const appA = ` minOccurs="${esc(String(minOcc))}" maxOccurs="${esc(String(maxOcc))}"`;
 
   const appFacets = spec.applicability.facets.flatMap((f) => facetLines(f));
   const appBlock = appFacets.length
@@ -146,6 +147,12 @@ function specLines(spec: IDSSpecification): string[] {
   return [`<specification ${attrs.join(" ")}>`, ...indent([...appBlock, ...reqBlock], 1), `</specification>`];
 }
 
+// IDS 1.0 XSD constrains <author> to an email and <date> to xs:date; emitting a
+// value that doesn't match makes strict validators (e.g. IfcTester) reject the
+// whole file, so we omit these when they don't fit rather than write junk.
+const EMAIL_RE = /^[^@\s]+@[^@\s.]+\.[^@\s]+$/;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}/;
+
 function infoLines(doc: IDSDocument): string[] {
   const i = doc.info;
   // Order per the IDS 1.0 ids.xsd info sequence; only <title> is required.
@@ -154,8 +161,8 @@ function infoLines(doc: IDSDocument): string[] {
   opt("copyright", i.copyright);
   opt("version", i.version);
   opt("description", i.description);
-  opt("author", i.author);
-  opt("date", i.date);
+  if (i.author && EMAIL_RE.test(i.author)) out.push(`<author>${esc(i.author)}</author>`);
+  if (i.date && DATE_RE.test(i.date)) out.push(`<date>${esc(i.date)}</date>`);
   opt("purpose", i.purpose);
   opt("milestone", i.milestone);
   return [`<info>`, ...indent(out, 1), `</info>`];

@@ -186,6 +186,7 @@ export const en: Dict = {
     docTitle: "Document title",
     titlePh: "e.g. Structural delivery spec",
     author: "Author",
+    authorInvalid: "Author must be a valid email (required by the IDS schema); otherwise it's omitted on export.",
     specs: "Specifications",
     unnamedSpec: "(unnamed)",
     duplicate: "Duplicate",
