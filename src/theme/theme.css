@@ -183,6 +183,21 @@ body {
   color: var(--muted);
   margin: 0 0 18px;
 }
+.upload-credit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 16px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.upload-credit a {
+  color: var(--accent, #2563eb);
+  text-decoration: none;
+}
+.upload-credit a:hover {
+  text-decoration: underline;
+}
 
 /* Theme toggle */
 .toggle {

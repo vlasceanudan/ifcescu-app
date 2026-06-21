@@ -56,6 +56,16 @@ export function UploadPanel({ onFile, variant = "drop" }: Props) {
       >
         {t("upload.dropPre")}<strong>.ifc</strong>{t("upload.dropPost")}
       </div>
+      <div className="upload-credit">
+        <span>
+          {t("upload.creditBuilt")}{" "}
+          <a href="https://github.com/LTplus-AG/ifc-lite" target="_blank" rel="noreferrer">ifc-lite</a>.
+        </span>
+        <span>
+          {t("upload.creditThanks")}{" "}
+          <a href="https://buymeacoffee.com/louistrue" target="_blank" rel="noreferrer">{t("upload.creditSupport")}</a>.
+        </span>
+      </div>
       {input}
     </div>
   );

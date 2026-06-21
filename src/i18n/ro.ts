@@ -332,6 +332,9 @@ export const ro = {
     sub: "Încărcați un fișier IFC pentru a-l vizualiza în 3D și a-i edita atributele și proprietățile.",
     dropPre: "Trageți un fișier ",
     dropPost: " aici sau faceți click pentru a selecta",
+    creditBuilt: "Construit pe motorul open-source",
+    creditThanks: "Mulțumim lui Louis Trümpler pentru efortul depus —",
+    creditSupport: "susține-l",
   },
   tree: {
     collapseAll: "Restrânge tot",

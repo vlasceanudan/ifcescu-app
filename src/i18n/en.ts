@@ -328,6 +328,9 @@ export const en: Dict = {
     sub: "Upload an IFC file to view it in 3D and edit its attributes and properties.",
     dropPre: "Drag a ",
     dropPost: " file here or click to select",
+    creditBuilt: "Built on the open-source engine",
+    creditThanks: "Thanks to Louis Trümpler for the effort —",
+    creditSupport: "support him",
   },
   tree: {
     collapseAll: "Collapse all",
