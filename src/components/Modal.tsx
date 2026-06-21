@@ -6,11 +6,13 @@ interface Props {
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  /** Extra class on the modal card (e.g. "modal-wide" for the IDS editor). */
+  className?: string;
 }
 
 /** Lightweight modal: fixed backdrop + centered card. Closes on Escape, on the
  *  × button, and on backdrop click (clicks inside the card are stopped). */
-export function Modal({ title, onClose, children, footer }: Props) {
+export function Modal({ title, onClose, children, footer, className }: Props) {
   const { t } = useI18n();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -20,7 +22,7 @@ export function Modal({ title, onClose, children, footer }: Props) {
 
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
-      <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
+      <div className={"modal" + (className ? " " + className : "")} onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <span>{title}</span>
           <button className="modal-close" onClick={onClose} title={t("common.close")}>×</button>

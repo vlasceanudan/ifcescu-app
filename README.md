@@ -61,7 +61,14 @@ switchable at runtime from a button in the top-right (the choice is remembered).
 - **Data table (pivot)** — docked, resizable table that groups elements by
   Model / class / material / property / quantity and aggregates value columns
   (sum/avg/count/min/max), with row→3D selection and CSV export.
-- **IDS** — validate the primary model against an uploaded IDS specification.
+- **Filter & select** — a rule-based query builder (IFC type *is one of*, property
+  `pset.name operator value`, or name contains/equals/regex) combined with AND/OR, an
+  optional result limit, and an optional "only within current selection" (chaining); Run
+  to **select or isolate** the matches in 3D.
+- **IDS** — validate the primary model against an uploaded IDS specification, **and author
+  IDS in-app**: the IDS creator (✎) builds specifications across all six facets
+  (Entity/Attribute/Property/Classification/Material/PartOf), exports a `.ids`, loads an
+  existing one to edit, and validates directly against the model.
 - **BCF** — review BCF topics/viewpoints.
 - **Globe (Cesium)** — place georeferenced models (or models already in real Stereo 70
   coordinates) on a token-free 3D world map with OSM/Esri basemaps, terrain, and an
@@ -128,6 +135,9 @@ The suite lives in `tests/`:
 - **`writeMapConversion.test.ts`** — STEP-text writer for the cadastre export: updates
   an existing `IfcMapConversion`, injects one (+ `IfcProjectedCRS`) when absent, and
   leaves IFC2x3 untouched. Always runs.
+- **`idsWriter.test.ts`** — the IDS serializer: round-trips an authored `IDSDocument`
+  (every facet + constraint) through `serializeIds` → `parseIdsXml` and audits the XML.
+  Always runs.
 - **`createSite.test.ts`** — `IfcEditor` round-trip on an inline minimal IFC4 model
   (edit attribute + property + new pset, then export and re-open). Self-contained;
   always runs.
@@ -169,14 +179,17 @@ src/
   App.tsx                  app shell: top bar, 3D / Globe tabs, primary editor state
   ifc/
     store.ts               shared @ifc-lite columnar parse provider (parseStore)
-    editor.ts              IfcEditor: read / edit / export (@ifc-lite mutations + export)
+    editor.ts              IfcEditor: read / edit / export (+ BulkQueryEngine.select for Filter)
     constants.ts           counties, pset/property names, Stereo 70 defaults
     bcf.ts                 BCF read/write helpers
-    ids.ts                 IDS validation harness
+    ids.ts                 IDS validate + serialize (parse/validate/audit + serializeIds)
+    idsWriter.ts           serialize an IDSDocument to buildingSMART IDS 1.0 XML
+    idsCatalog.ts          authoring catalogs (IFC classes, psets, data types, from-model)
   components/
     Header, UploadPanel, Viewer, IfcTree, PropsPanel, EditPanel, GlobeViewer,
     ModelsPanel, NavCube, ViewBar, BcfPanel, IdsPanel, DataTablePanel,
-    DataTableConfig, Modal, HelpModal, SettingsModal, GeorefPanel (cadastre)
+    DataTableConfig, Modal, HelpModal, SettingsModal, GeorefPanel (cadastre),
+    IdsEditorModal (IDS creator), FilterModal (filter & select)
   viewer/
     engine.ts              WebGPU engine wrapper (@ifc-lite/renderer): federated load,
                            pick/render, camera + nav-cube matrices, selection outline,

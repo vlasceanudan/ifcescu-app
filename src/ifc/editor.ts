@@ -11,12 +11,24 @@ import {
   getRawNamedAttributes,
   type IfcDataStore,
 } from "@ifc-lite/parser";
-import { IFC_ENTITY_NAMES } from "@ifc-lite/data";
+import { IFC_ENTITY_NAMES, IfcTypeEnum } from "@ifc-lite/data";
 import { PropertyValueType, QuantityType } from "@ifc-lite/data";
-import { MutablePropertyView } from "@ifc-lite/mutations";
+import { MutablePropertyView, BulkQueryEngine } from "@ifc-lite/mutations";
 import { StepExporter } from "@ifc-lite/export";
 import { parseStore, detectSchema, type IfcSchema } from "./store";
 import { writeMapConversion } from "../geo/writeMapConversion";
+
+// Query types for the Filter feature (BulkQueryEngine.select).
+export type { SelectionCriteria, FilterOperator } from "@ifc-lite/mutations";
+
+/** Map an IFC class name (any case, e.g. "IFCWALL"/"IfcWall") to its IfcTypeEnum
+ *  number for BulkQueryEngine's `entityTypes`, or null when not in the enum. */
+export function classToTypeEnum(name: string): number | null {
+  if (!name) return null;
+  const pretty = IFC_ENTITY_NAMES[name.toUpperCase()] ?? name;
+  const v = (IfcTypeEnum as Record<string, unknown>)[pretty];
+  return typeof v === "number" ? v : null;
+}
 
 export interface GeorefInfo {
   /** Projected CRS name, e.g. "EPSG:3844". */
@@ -228,6 +240,22 @@ export class IfcEditor {
   }
   setQuantity(id: number, qset: string, name: string, value: number, qType: QuantityType = QuantityType.Length): void {
     this.view.setQuantity(id, qset, name, value, qType);
+  }
+
+  // --- query selection (@ifc-lite BulkQueryEngine) for the Filter feature ---
+  private bulk?: BulkQueryEngine;
+  private bulkEngine(): BulkQueryEngine {
+    const s = this.store as any;
+    return (this.bulk ??= new BulkQueryEngine(s.entities, this.view, s.spatialHierarchy ?? null, s.properties, s.strings));
+  }
+  /** Resolve a selection criteria to matching express ids (Filter query-builder). */
+  bulkSelect(criteria: import("@ifc-lite/mutations").SelectionCriteria): number[] {
+    return this.bulkEngine().select(criteria);
+  }
+  /** Resolve an IFC class name to the express ids of its instances (fallback for
+   *  the bulk class filter when the class isn't in IfcTypeEnum). */
+  expressIdsOfClass(name: string): number[] {
+    return this.store.entityIndex.byType.get(name.toUpperCase()) ?? [];
   }
 
   // --- georeferencing (read-only in the UI; kept for the globe + export) --

@@ -12,6 +12,8 @@ interface Props {
   onSelectEntity: (expressId: number) => void;
   /** Turn the current report's failures into BCF topics (optional). */
   onExportBcf?: (report: IDSValidationReport) => void;
+  /** Open the IDS creator/editor modal. */
+  onOpenEditor?: () => void;
   /** When provided, renders a close button (docked-panel mode). */
   onClose?: () => void;
 }
@@ -105,7 +107,7 @@ function SpecCard({
  * Non-conforming entities are highlighted red in the 3D view (handled by the
  * viewer from the same report); clicking a row selects + zooms to that element.
  */
-export function IdsPanel({ bytes, fileName, report, onReport, onSelectEntity, onExportBcf, onClose }: Props) {
+export function IdsPanel({ bytes, fileName, report, onReport, onSelectEntity, onExportBcf, onOpenEditor, onClose }: Props) {
   const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
   const [idsName, setIdsName] = useState<string | null>(null);
@@ -148,11 +150,16 @@ export function IdsPanel({ bytes, fileName, report, onReport, onSelectEntity, on
       <div className="ids-head">
         <span className="ids-head-title">📋 {t("ids.title")}</span>
         <div className="ids-head-actions">
+          {onOpenEditor && (
+            <button className="ids-icon" title={t("idsEditor.title")} onClick={onOpenEditor}>
+              ✎
+            </button>
+          )}
           <button className="ids-icon" title={t("ids.upload")} onClick={() => inputRef.current?.click()} disabled={validating}>
             ⤓
           </button>
           {report && (
-            <button className="ids-icon" title={t("ids.clearReport")} onClick={() => onReport(null)}>
+            <button className="ids-icon" title={t("ids.clearReport")} onClick={() => { onReport(null); setIdsName(null); setError(null); }}>
               🗑
             </button>
           )}

@@ -25,7 +25,10 @@ import { GeorefPanel } from "./GeorefPanel";
 import { NavCube } from "./NavCube";
 import { ViewBar } from "./ViewBar";
 import type { PivotConfig, PivotModel, Rgba } from "../viewer/pivot";
-import type { IDSValidationReport } from "../ifc/ids";
+import { runIdsValidation } from "../ifc/ids";
+import type { IDSValidationReport, IDSDocument } from "../ifc/ids";
+import { IdsEditorModal } from "./IdsEditorModal";
+import { FilterModal } from "./FilterModal";
 import { createBCFFromIDSReport, addTopicToProject, type BCFProject } from "../ifc/bcf";
 
 // Non-conforming IDS elements are painted this red in the 3D view.
@@ -137,9 +140,10 @@ function ViewIcon({ kind }: { kind: "iso" | "up" | "down" | "left" | "right" | "
 }
 
 /** Line icons for the toolbar (replace the colored emoji to match the app style). */
-function ToolIcon({ kind }: { kind: "section" | "ids" | "bcf" | "table" | "point" | "views" | "measure" | "distance" | "cadastre" }) {
+function ToolIcon({ kind }: { kind: "section" | "ids" | "bcf" | "table" | "point" | "views" | "measure" | "distance" | "cadastre" | "filter" }) {
   const a = { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
   switch (kind) {
+    case "filter": return <svg {...a}><path d="M3 4h18l-7 8.5V20l-4 1v-8.5z" /></svg>;
     case "measure": return <svg {...a}><path d="M15.3 2.3 2.3 15.3l6.4 6.4L21.7 8.7z" /><path d="M7 7l1.6 1.6M10 4l1.6 1.6M4 10l1.6 1.6M13 13l1.6 1.6" /></svg>;
     case "distance": return <svg {...a}><path d="M3 12h18" /><path d="M6 8l-3 4 3 4M18 8l3 4-3 4" /></svg>;
     case "cadastre": return <svg {...a}><path d="M9 4 3 7v13l6-3 6 3 6-3V4l-6 3z" /><path d="M9 4v13M15 7v13" /></svg>;
@@ -262,6 +266,8 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
   const [targetB, setTargetB] = useState<{ e: number; n: number } | null>(null);
   const [armedCorner, setArmedCorner] = useState<AlignSlot | null>(null);
   const armedCornerRef = useRef<AlignSlot | null>(null);
+  const [idsEditorOpen, setIdsEditorOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
   // Selected parcel (info shown in the panel) + the "show all numbers" toggle.
   const [selectedParcel, setSelectedParcel] = useState<ParcelInfo | null>(null);
   const [showAllLabels, setShowAllLabels] = useState(false);
@@ -580,6 +586,21 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
   useEffect(() => {
     engineRef.current?.setOutlineColor(settings.viewer.selection.outline);
   }, [settings.viewer.selection.outline, ready]);
+
+  // Validate an authored IDS doc (from the editor) against the loaded model. The
+  // editor stays OPEN (so the user can keep editing / exporting); the report is
+  // pushed to the IDS panel behind the modal and returned for an inline summary.
+  const validateAuthoredIds = async (doc: IDSDocument): Promise<IDSValidationReport | null> => {
+    setDock("ids");
+    try {
+      const report = await runIdsValidation(bytes, doc, fileName);
+      onIdsReport?.(report);
+      return report;
+    } catch (e) {
+      console.error("IDS validation failed", e);
+      return null;
+    }
+  };
 
   // IDS → BCF: one topic per failing entity, merged into the shared project,
   // then flip the dock to BCF so the new topics are visible.
@@ -1077,6 +1098,11 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
 
           <span className="vsep" />
 
+          <button className="vbtn" onClick={() => setFilterOpen(true)} title={t("filter.title")}>
+            <span className="ic"><ToolIcon kind="filter" /></span>
+            <span>{t("filter.tab")}</span>
+          </button>
+
           <button className={"vbtn" + (dock === "ids" ? " active" : "")} onClick={() => setDock((d) => (d === "ids" ? "none" : "ids"))}>
             <span className="ic"><ToolIcon kind="ids" /></span>
             <span>IDS</span>
@@ -1091,6 +1117,7 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
             <span className="ic"><ToolIcon kind="table" /></span>
             <span>Tabel</span>
           </button>
+
 
           {cadastreEnabled && (
             <button className={"vbtn" + (dock === "geo" ? " active" : "")} onClick={() => setDock((d) => (d === "geo" ? "none" : "geo"))}>
@@ -1242,9 +1269,36 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
             engineRef.current?.zoomToSelection(new Set([id]));
           }}
           onExportBcf={exportIdsToBcf}
+          onOpenEditor={() => setIdsEditorOpen(true)}
           onClose={() => setDock("none")}
         />
       )}
+
+      {idsEditorOpen && (
+        <IdsEditorModal
+          schema={detectSchema(bytes) as any}
+          pivotModels={pivotModels}
+          initialDoc={idsReport?.document ?? null}
+          onValidate={validateAuthoredIds}
+          onClose={() => setIdsEditorOpen(false)}
+        />
+      )}
+
+      {filterOpen && (() => {
+        const eng = engineRef.current;
+        const localIds: number[] = [];
+        if (eng) for (const g of selectedIds) { const r = eng.resolveGlobal(g); if (r && isPrimary(r.modelId)) localIds.push(r.localId); }
+        return (
+          <FilterModal
+            editor={editor}
+            selectedLocalIds={localIds}
+            schema={detectSchema(bytes) as any}
+            pivotModels={pivotModels}
+            onResult={(ids, isolate) => { if (isolate) isolateIds(ids); else selectIds(ids); }}
+            onClose={() => setFilterOpen(false)}
+          />
+        );
+      })()}
 
       {dock === "bcf" && (
         <BcfPanel

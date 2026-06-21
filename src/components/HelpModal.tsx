@@ -15,6 +15,7 @@ const SECTIONS: { titleKey: I18nKey; bodyKey: I18nKey; open?: boolean }[] = [
   { titleKey: "help.editingTitle", bodyKey: "help.editingBody" },
   { titleKey: "help.toolsTitle", bodyKey: "help.toolsBody" },
   { titleKey: "help.federationTitle", bodyKey: "help.federationBody" },
+  { titleKey: "help.filterTitle", bodyKey: "help.filterBody" },
   { titleKey: "help.dataTableTitle", bodyKey: "help.dataTableBody" },
   { titleKey: "help.idsBcfTitle", bodyKey: "help.idsBcfBody" },
   { titleKey: "help.globeTitle", bodyKey: "help.globeBody" },
