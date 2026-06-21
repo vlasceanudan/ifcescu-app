@@ -15,6 +15,7 @@ import { IFC_ENTITY_NAMES, IfcTypeEnum } from "@ifc-lite/data";
 import { PropertyValueType, QuantityType } from "@ifc-lite/data";
 import { MutablePropertyView, BulkQueryEngine } from "@ifc-lite/mutations";
 import { StepExporter } from "@ifc-lite/export";
+import { generateIfcGuid } from "@ifc-lite/encoding";
 import { parseStore, detectSchema, type IfcSchema } from "./store";
 import { writeMapConversion } from "../geo/writeMapConversion";
 
@@ -104,6 +105,11 @@ export class IfcEditor {
   private view: MutablePropertyView;
   /** Georef applied in-app (from the cadastral alignment tool); written on export. */
   private pendingGeoref: GeorefInfo | null = null;
+  // bSDD: one IfcClassification entity is reused per dictionary (keyed by uri →
+  // overlay expressId). `createdCount` counts assignments so the download badge
+  // reflects created entities (which don't appear in view.getMutations()).
+  private classificationByDict = new Map<string, number>();
+  private createdCount = 0;
 
   private constructor(
     private store: IfcDataStore,
@@ -146,7 +152,7 @@ export class IfcEditor {
 
   /** True when any mutation has been recorded. */
   hasChanges(): boolean {
-    return this.view.hasChanges() || this.pendingGeoref != null;
+    return this.view.hasChanges() || this.pendingGeoref != null || this.createdCount > 0;
   }
 
   /** Number of DISTINCT things changed (an attribute/property/set edited twice
@@ -162,7 +168,7 @@ export class IfcEditor {
             : `p:${m.entityId}:${m.psetName ?? ""}:${m.propName ?? ""}`;
       keys.add(k);
     }
-    return keys.size + (this.pendingGeoref != null ? 1 : 0);
+    return keys.size + (this.pendingGeoref != null ? 1 : 0) + this.createdCount;
   }
 
   // --- selection read (edit panel) ----------------------------------------
@@ -240,6 +246,81 @@ export class IfcEditor {
   }
   setQuantity(id: number, qset: string, name: string, value: number, qType: QuantityType = QuantityType.Length): void {
     this.view.setQuantity(id, qset, name, value, qType);
+  }
+
+  // --- bSDD (buildingSMART Data Dictionary) -------------------------------
+  private isIfc2x3(): boolean {
+    return this.schemaName === "IFC2X3";
+  }
+  private entityRef(id: number): string {
+    return `#${id}`;
+  }
+  /** Get (or lazily create) the IfcClassification entity for a bSDD dictionary. */
+  private classificationFor(dictionaryUri: string, dictionaryName: string): number {
+    const hit = this.classificationByDict.get(dictionaryUri);
+    if (hit != null) return hit;
+    const v = this.view as any;
+    // IFC4/IFC4X3: IfcClassification(Source, Edition, EditionDate, Name, Description, Specification, ReferenceTokens)
+    // IFC2X3:      IfcClassification(Source, Edition, EditionDate, Name)
+    const attrs = this.isIfc2x3()
+      ? ["buildingSMART Data Dictionary", null, null, dictionaryName || dictionaryUri]
+      : ["buildingSMART Data Dictionary", null, null, dictionaryName || dictionaryUri, null, dictionaryUri, null];
+    const e = v.createEntity("IfcClassification", attrs);
+    this.classificationByDict.set(dictionaryUri, e.expressId);
+    return e.expressId;
+  }
+
+  /**
+   * Associate a bSDD class (classification) with the given elements by creating
+   * IfcClassificationReference + IfcRelAssociatesClassification (one rel covering
+   * all elements). The IfcClassification source is reused per dictionary.
+   */
+  assignClassification(
+    localIds: number[],
+    ref: { dictionaryUri: string; dictionaryName: string; classUri: string; code: string; name: string },
+  ): void {
+    if (!localIds.length) return;
+    const v = this.view as any;
+    const classificationId = this.classificationFor(ref.dictionaryUri, ref.dictionaryName);
+    // IFC4/IFC4X3: IfcClassificationReference(Location, Identification, Name, ReferencedSource, Description, Sort)
+    // IFC2X3:      IfcClassificationReference(Location, ItemReference, Name, ReferencedSource)
+    const refAttrs = this.isIfc2x3()
+      ? [ref.classUri, ref.code, ref.name, this.entityRef(classificationId)]
+      : [ref.classUri, ref.code, ref.name, this.entityRef(classificationId), null, null];
+    const reference = v.createEntity("IfcClassificationReference", refAttrs);
+    // IfcRelAssociatesClassification(GlobalId, OwnerHistory, Name, Description, RelatedObjects, RelatingClassification)
+    v.createEntity("IfcRelAssociatesClassification", [
+      generateIfcGuid(),
+      null,
+      "bSDD",
+      null,
+      localIds.map((id) => this.entityRef(id)),
+      this.entityRef(reference.expressId),
+    ]);
+    this.createdCount += 1;
+  }
+
+  /** Map a bSDD data-type token to an @ifc-lite PropertyValueType. */
+  static bsddTypeToPropType(dataType?: string): PropertyValueType {
+    switch ((dataType ?? "").toLowerCase()) {
+      case "boolean": return PropertyValueType.Boolean;
+      case "integer": return PropertyValueType.Integer;
+      case "real": return PropertyValueType.Real;
+      default: return PropertyValueType.Text;
+    }
+  }
+
+  /** Write bSDD-defined properties (with values) onto the given elements. */
+  applyBsddProperties(
+    localIds: number[],
+    items: Array<{ pset?: string; name: string; value: string; dataType?: string }>,
+  ): void {
+    for (const id of localIds) {
+      for (const it of items) {
+        if (!it.name || !it.value) continue;
+        this.setProperty(id, it.pset || "bSDD", it.name, it.value, IfcEditor.bsddTypeToPropType(it.dataType));
+      }
+    }
   }
 
   // --- query selection (@ifc-lite BulkQueryEngine) for the Filter feature ---

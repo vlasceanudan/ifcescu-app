@@ -183,6 +183,28 @@ body {
   color: var(--muted);
   margin: 0 0 18px;
 }
+.upload-samples {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.upload-samples-title { font-size: 0.82rem; color: var(--muted); }
+.upload-samples-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.upload-sample-btn {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+}
+.upload-sample-btn:hover { border-color: var(--accent); color: var(--accent); }
+.upload-sample-btn:disabled { opacity: 0.5; cursor: default; }
+.upload-sample-err { font-size: 0.8rem; color: var(--danger, #d33); }
 .upload-credit {
   display: flex;
   flex-direction: column;
@@ -2885,3 +2907,40 @@ table.summary td.k {
 .vp-name { flex: 1; cursor: pointer; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vp-del { cursor: pointer; color: var(--muted); padding: 0 2px; }
 .vp-del:hover { color: var(--danger, #d33); }
+
+/* bSDD modal */
+.bsdd-body { display: flex; flex-direction: column; gap: 12px; min-height: 320px; }
+.bsdd-hint { color: var(--muted); font-size: 0.85rem; padding: 4px 0; }
+.bsdd-search { display: flex; gap: 8px; align-items: center; }
+.bsdd-search select {
+  flex: 0 0 auto;
+  max-width: 240px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+  outline: none;
+}
+.bsdd-search select:focus { border-color: var(--accent); }
+.bsdd-search input { flex: 1; min-width: 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; color: var(--text); outline: none; }
+.bsdd-results { display: flex; flex-direction: column; gap: 2px; max-height: 360px; overflow: auto; }
+.bsdd-result { display: flex; flex-direction: column; gap: 1px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.bsdd-result:hover { background: var(--surface-2); border-color: var(--accent); }
+.bsdd-result-name { font-weight: 600; font-size: 0.88rem; color: var(--text); }
+.bsdd-result-meta { font-size: 0.76rem; color: var(--muted); }
+.bsdd-detail { display: flex; flex-direction: column; gap: 12px; }
+.bsdd-chosen { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; position: relative; }
+.bsdd-chosen-name { font-weight: 700; }
+.bsdd-chosen-meta { font-size: 0.78rem; color: var(--muted); }
+.bsdd-back { align-self: flex-start; margin-top: 6px; background: none; border: none; color: var(--accent); cursor: pointer; font-size: 0.8rem; padding: 0; }
+.bsdd-assign { margin: 0; }
+.bsdd-props-head { font-weight: 600; font-size: 0.85rem; color: var(--muted); }
+.bsdd-props { display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow: auto; }
+.bsdd-prop { display: flex; align-items: center; gap: 10px; }
+.bsdd-prop-check { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; cursor: pointer; font-size: 0.85rem; }
+.bsdd-prop-name { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bsdd-prop-type { font-size: 0.72rem; color: var(--muted); flex: 0 0 auto; }
+.bsdd-prop-value { flex: 0 0 200px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; color: var(--text); outline: none; }

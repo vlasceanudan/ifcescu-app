@@ -83,6 +83,12 @@ switchable at runtime from a button in the top-right (the choice is remembered).
   features** (gates the cadastre module — off by default), **units & formatting**
   (length m/cm/mm, area m²/ha, decimals), and **3D viewer** (background, projection
   perspective/orthographic, navigation cube, view bar, default snapping).
+- **bSDD (experimental, off by default)** — enable it in Settings to connect to the online
+  [buildingSMART Data Dictionary](https://api.bsdd.buildingsmart.org): select one or more elements,
+  pick a dictionary (IFC, Uniclass, …), search a class, and assign it as a real
+  `IfcClassificationReference` (via `IfcRelAssociatesClassification`) and/or write the class's
+  bSDD-defined properties (with values) into property sets. The request is proxied in dev (`/bsdd`);
+  in a static production build the direct call may be CORS-blocked unless the domain is on bSDD's allow-list.
 - **Cadastre — ANCPI (experimental, off by default)** — enable it in Settings to
   georeference a model onto real-world parcels: fetch ANCPI cadastral parcels
   (Stereo 70 GeoJSON) within a radius auto-centred on the model, draw them in the 3D
@@ -185,6 +191,7 @@ public/
   bs_Logo.png              favicon
   logo_bsro.svg            buildingSMART România logo (theme-aware)
   geoid/egm2008-ro.json    EGM2008 geoid undulation grid, clipped to Romania
+  samples/*.ifc            bundled demo models (building + infrastructure), loadable from the start screen
 scripts/gen-geoid.mjs      one-off generator for the geoid grid asset (not in the build)
 src/
   main.tsx                 React entry
@@ -197,11 +204,13 @@ src/
     ids.ts                 IDS validate + serialize (parse/validate/audit + serializeIds)
     idsWriter.ts           serialize an IDSDocument to buildingSMART IDS 1.0 XML
     idsCatalog.ts          authoring catalogs (IFC classes, psets, data types, from-model)
+    bsdd.ts                bSDD REST client (dictionaries, class search, class + properties)
   components/
     Header, UploadPanel, Viewer, IfcTree, PropsPanel, EditPanel, GlobeViewer,
     ModelsPanel, NavCube, ViewBar, BcfPanel, IdsPanel, DataTablePanel,
     DataTableConfig, Modal, HelpModal, SettingsModal, ErrorBoundary, GeorefPanel
-    (cadastre), IdsEditorModal (IDS creator), FilterModal (filter & select)
+    (cadastre), IdsEditorModal (IDS creator), FilterModal (filter & select),
+    BsddModal (bSDD classifier — experimental)
   viewer/
     engine.ts              WebGPU engine wrapper (@ifc-lite/renderer): federated load,
                            pick/render, camera + nav-cube matrices, selection outline,

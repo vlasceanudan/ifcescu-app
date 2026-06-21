@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useI18n } from "../i18n/react";
 // Inlined so the "building" letters (fill:currentColor) follow the theme color.
 import logoRaw from "../../public/logo_bsro.svg?raw";
@@ -8,13 +8,37 @@ interface Props {
   variant?: "drop" | "button";
 }
 
+// Bundled sample models (public/samples/) for users without an IFC at hand.
+const SAMPLES: { file: string; labelKey: "upload.sampleBuilding" | "upload.sampleInfra" }[] = [
+  { file: "Building-Architecture.ifc", labelKey: "upload.sampleBuilding" },
+  { file: "Infra-Road.ifc", labelKey: "upload.sampleInfra" },
+];
+
 export function UploadPanel({ onFile, variant = "drop" }: Props) {
   const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
+  const [loadingSample, setLoadingSample] = useState(false);
+  const [sampleError, setSampleError] = useState(false);
 
   const pick = (files: FileList | null) => {
     const f = files?.[0];
     if (f) onFile(f);
+  };
+
+  // Fetch a bundled sample and feed it through the normal onFile flow.
+  const loadSample = async (file: string) => {
+    setLoadingSample(true);
+    setSampleError(false);
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}samples/${file}`);
+      if (!res.ok) throw new Error(String(res.status));
+      const buf = await res.arrayBuffer();
+      onFile(new File([buf], file, { type: "application/x-step" }));
+    } catch {
+      setSampleError(true);
+    } finally {
+      setLoadingSample(false);
+    }
   };
 
   const input = (
@@ -55,6 +79,17 @@ export function UploadPanel({ onFile, variant = "drop" }: Props) {
         }}
       >
         {t("upload.dropPre")}<strong>.ifc</strong>{t("upload.dropPost")}
+      </div>
+      <div className="upload-samples">
+        <span className="upload-samples-title">{t("upload.sampleTitle")}</span>
+        <div className="upload-samples-row">
+          {SAMPLES.map((s) => (
+            <button key={s.file} className="upload-sample-btn" disabled={loadingSample} onClick={() => loadSample(s.file)}>
+              {t(s.labelKey)}
+            </button>
+          ))}
+        </div>
+        {sampleError && <span className="upload-sample-err">{t("upload.sampleError")}</span>}
       </div>
       <div className="upload-credit">
         <span>

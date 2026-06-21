@@ -30,6 +30,7 @@ import { runIdsValidation } from "../ifc/ids";
 import type { IDSValidationReport, IDSDocument } from "../ifc/ids";
 import { IdsEditorModal } from "./IdsEditorModal";
 import { FilterModal } from "./FilterModal";
+import { BsddModal } from "./BsddModal";
 import { createBCFFromIDSReport, addTopicToProject, type BCFProject } from "../ifc/bcf";
 
 // Non-conforming IDS elements are painted this red in the 3D view.
@@ -181,6 +182,8 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
   const { t, lang } = useI18n();
   const { settings, update } = useSettings();
   const cadastreEnabled = settings.experimental.cadastre;
+  const bsddEnabled = settings.experimental.bsdd;
+  const [bsddOpen, setBsddOpen] = useState(false);
   // Mirrors the current projection so the empty-deps keydown handler reads a fresh
   // value when toggling with "O" (avoids a stale closure).
   const projectionRef = useRef(settings.viewer.projection);
@@ -1094,6 +1097,14 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
   };
 
   const selArr = () => [...selectedIds];
+  // Primary-model local ids of the current selection (bSDD edits the primary model).
+  const primaryLocalIds = useMemo(() => {
+    const eng = engineRef.current;
+    const out: number[] = [];
+    if (eng) for (const g of selectedIds) { const r = eng.resolveGlobal(g); if (r && isPrimary(r.modelId)) out.push(r.localId); }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIds]);
 
   if (!hasWebGPU) {
     return (
@@ -1257,6 +1268,13 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
             <button className={"vbtn" + (dock === "geo" ? " active" : "")} onClick={() => setDock((d) => (d === "geo" ? "none" : "geo"))}>
               <span className="ic"><ToolIcon kind="cadastre" /></span>
               <span>{t("geo.tab")}</span>
+            </button>
+          )}
+
+          {bsddEnabled && (
+            <button className="vbtn" onClick={() => setBsddOpen(true)} disabled={!primaryLocalIds.length} title={t("bsdd.title")}>
+              <span className="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6" /></svg></span>
+              <span>bSDD</span>
             </button>
           )}
 
@@ -1425,6 +1443,24 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
           pivotModels={pivotModels}
           onResult={(ids, isolate) => { if (isolate) isolateIds(ids); else selectIds(ids); }}
           onClose={() => setFilterOpen(false)}
+        />
+      )}
+
+      {bsddOpen && (
+        <BsddModal
+          editor={editor}
+          selectedLocalIds={primaryLocalIds}
+          onApplied={() => {
+            onChangeCount(editor.changeCount());
+            const tgt = editTargetRef.current;
+            if (tgt && isPrimary(tgt.modelId)) {
+              const detail = editor.getSelection(tgt.localId);
+              setSelHeader(detail.header);
+              setPropGroups(detailToPropGroups(detail));
+              setPropsKey((k) => k + 1);
+            }
+          }}
+          onClose={() => setBsddOpen(false)}
         />
       )}
 

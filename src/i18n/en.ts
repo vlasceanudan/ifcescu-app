@@ -38,6 +38,8 @@ export const en: Dict = {
     badge: "experimental",
     cadastreLabel: "Cadastre module",
     cadastreDesc: "ANCPI cadastral georeferencing and parcels in the viewer.",
+    bsddLabel: "bSDD module",
+    bsddDesc: "Assign classifications and properties from the buildingSMART Data Dictionary (online).",
     unitsTitle: "Units & formatting",
     unitLength: "Length unit",
     unitArea: "Area unit",
@@ -142,6 +144,22 @@ export const en: Dict = {
   boq: {
     title: "Bill of Quantities",
     generated: "generated on",
+  },
+  bsdd: {
+    title: "Assign from bSDD",
+    allDictionaries: "All dictionaries",
+    searchPlaceholder: "Search a class (e.g. wall, beam)...",
+    search: "Search",
+    searching: "Searching...",
+    noResults: "No results.",
+    noSelection: "Select at least one element in the viewer.",
+    back: "Back to results",
+    assignClass: "Assign the classification to the selected elements",
+    properties: "Properties",
+    noProps: "This class has no defined properties.",
+    value: "Value",
+    apply: "Apply to {n} elements",
+    rateLimited: "bSDD temporarily rate-limited the requests (too many). Wait a few seconds and try again.",
   },
   pivot: {
     model: "Model",
@@ -328,6 +346,10 @@ export const en: Dict = {
     sub: "Upload an IFC file to view it in 3D and edit its attributes and properties.",
     dropPre: "Drag a ",
     dropPost: " file here or click to select",
+    sampleTitle: "No IFC? Try a sample:",
+    sampleBuilding: "Building",
+    sampleInfra: "Infrastructure",
+    sampleError: "Could not load the sample.",
     creditBuilt: "Built on the open-source engine",
     creditThanks: "Thanks to Louis Trümpler for the effort —",
     creditSupport: "support him",
@@ -462,6 +484,9 @@ export const en: Dict = {
     cadastreTitle: "ANCPI cadastre (experimental)",
     cadastreBody:
       "• Enable it in Settings → Experimental features; it is hidden by default.\n• \"Fetch parcels\": pulls ANCPI cadastral parcels within a radius, auto-centred on the model's location (when it has real coordinates).\n• Parcels show in the 3D scene and on the 3D Globe; hover or click a parcel for its number and area.\n• Align model to ground: set 2 pairs (Snap model point + Pick parcel corner by snapping in 3D), then \"Apply\" (live) or \"Write to IFC\" (IfcMapConversion).\n• The Measure tool also snaps to parcel corners, so you can measure between the model and the cadastral boundaries.",
+    bsddTitle: "bSDD (experimental)",
+    bsddBody:
+      "• Enable it in Settings → Experimental features; hidden by default.\n• Select one or more elements (Shift+click) and press the bSDD button in the toolbar.\n• Pick a dictionary (e.g. IFC, Uniclass), search a class, then assign the classification (IfcClassificationReference) and/or the properties defined by that class (with values) to the selected elements.\n• Requires internet access (the online bSDD API). In production it may be blocked by CORS unless the domain is added to bSDD's allow-list.",
     settingsTitle: "Settings",
     settingsBody:
       "• The gear button (⚙) in the top bar opens settings.\n• Experimental features: enable work-in-progress modules (e.g. Cadastre), off by default.\n• Units & formatting: length unit (m/cm/mm), area (m²/ha) and decimals — affects measurements and cadastral readouts.\n• 3D viewer: background color, projection (perspective/orthographic), navigation cube, view bar and the default snap options.\n• Choices are saved automatically.",

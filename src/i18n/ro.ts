@@ -42,6 +42,8 @@ export const ro = {
     badge: "experimental",
     cadastreLabel: "Modul Cadastru",
     cadastreDesc: "Georeferențiere și parcele cadastrale ANCPI în vizualizator.",
+    bsddLabel: "Modul bSDD",
+    bsddDesc: "Atribuie clasificări și proprietăți din buildingSMART Data Dictionary (online).",
     unitsTitle: "Unități și format",
     unitLength: "Unitate lungime",
     unitArea: "Unitate suprafață",
@@ -146,6 +148,22 @@ export const ro = {
   boq: {
     title: "Antemăsurătoare",
     generated: "generat la",
+  },
+  bsdd: {
+    title: "Atribuie din bSDD",
+    allDictionaries: "Toate dicționarele",
+    searchPlaceholder: "Caută o clasă (ex. perete, grindă)...",
+    search: "Caută",
+    searching: "Se caută...",
+    noResults: "Niciun rezultat.",
+    noSelection: "Selectează cel puțin un element în vizualizator.",
+    back: "Înapoi la rezultate",
+    assignClass: "Atribuie clasificarea elementelor selectate",
+    properties: "Proprietăți",
+    noProps: "Această clasă nu are proprietăți definite.",
+    value: "Valoare",
+    apply: "Aplică pe {n} elemente",
+    rateLimited: "bSDD a limitat temporar cererile (prea multe). Așteaptă câteva secunde și încearcă din nou.",
   },
   pivot: {
     model: "Model",
@@ -332,6 +350,10 @@ export const ro = {
     sub: "Încărcați un fișier IFC pentru a-l vizualiza în 3D și a-i edita atributele și proprietățile.",
     dropPre: "Trageți un fișier ",
     dropPost: " aici sau faceți click pentru a selecta",
+    sampleTitle: "Nu ai un IFC? Încearcă un exemplu:",
+    sampleBuilding: "Clădire",
+    sampleInfra: "Infrastructură",
+    sampleError: "Nu am putut încărca exemplul.",
     creditBuilt: "Construit pe motorul open-source",
     creditThanks: "Mulțumim lui Louis Trümpler pentru efortul depus —",
     creditSupport: "susține-l",
@@ -466,6 +488,9 @@ export const ro = {
     cadastreTitle: "Cadastru ANCPI (experimental)",
     cadastreBody:
       "• Se activează din Setări → Funcționalități experimentale; implicit este ascuns.\n• „Adu parcele”: aduce parcelele cadastrale ANCPI într-o rază, centrate automat pe poziția modelului (dacă are coordonate reale).\n• Parcelele apar în scena 3D și pe Glob 3D; treci cu mouse-ul sau dă click pe o parcelă pentru număr și suprafață.\n• Aliniere model→teren: pune 2 perechi (Snap punct model + Alege colț de parcelă prin snap în 3D), apoi „Aplică” (live) sau „Scrie în IFC” (IfcMapConversion).\n• Unealta Măsurare face snap și pe colțurile parcelelor, deci poți măsura între model și limitele cadastrale.",
+    bsddTitle: "bSDD (experimental)",
+    bsddBody:
+      "• Se activează din Setări → Funcționalități experimentale; implicit este ascuns.\n• Selectează unul sau mai multe elemente (Shift+click) și apasă butonul bSDD din bara de unelte.\n• Alege un dicționar (ex. IFC, Uniclass), caută o clasă, apoi atribuie clasificarea (IfcClassificationReference) și/sau proprietățile definite de acea clasă (cu valori) elementelor selectate.\n• Necesită acces la internet (API-ul bSDD online). În producție poate fi blocat de CORS dacă domeniul nu e adăugat în lista bSDD.",
     settingsTitle: "Setări",
     settingsBody:
       "• Butonul roată (⚙) din bara de sus deschide setările.\n• Funcționalități experimentale: activează module în lucru (ex. Cadastru), oprite implicit.\n• Unități & format: unitatea de lungime (m/cm/mm), suprafață (m²/ha) și numărul de zecimale — afectează măsurătorile și citirile cadastrale.\n• Vizualizator 3D: culoare fundal, proiecție (perspectivă/ortografică), cub de navigație, bară de vederi și snap-ul implicit.\n• Alegerile se salvează automat.",

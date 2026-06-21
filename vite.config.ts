@@ -16,6 +16,13 @@ export default defineConfig({
         secure: false,
         rewrite: (p) => p.replace(/^\/ancpi/, ""),
       },
+      // Same CORS dodge for the bSDD API (src/ifc/bsdd.ts).
+      "/bsdd": {
+        target: "https://api.bsdd.buildingsmart.org",
+        changeOrigin: true,
+        secure: false,
+        rewrite: (p) => p.replace(/^\/bsdd/, ""),
+      },
     },
   },
   // @ifc-lite/ids bundles a top-level `await import()` (a Node-only branch of its

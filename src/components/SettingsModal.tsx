@@ -41,6 +41,13 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
           desc={t("settings.cadastreDesc")}
           badge={t("settings.badge")}
         />
+        <Toggle
+          checked={s.experimental.bsdd}
+          onChange={(v) => update({ experimental: { bsdd: v } })}
+          label={t("settings.bsddLabel")}
+          desc={t("settings.bsddDesc")}
+          badge={t("settings.badge")}
+        />
       </section>
 
       {/* Units & formatting */}
