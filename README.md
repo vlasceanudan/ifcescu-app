@@ -49,21 +49,26 @@ switchable at runtime from a button in the top-right (the choice is remembered).
 - **Model federation** — load multiple IFC models into one scene via the **Modele**
   panel; the first (**primary ★**) sets the origin and the rest are placed by their
   georeference offset. The tree, selection, properties, editing and data table work
-  across all loaded models; globe, IDS and BCF operate on the primary.
+  across all loaded models; globe, IDS and BCF operate on the primary. A **color by
+  model** toggle paints each model a distinct color to tell them apart.
 - **Structure tree** — Spatial / Class / Material tabs, one root per model, elements
-  grouped by class.
+  grouped by class, with a **search field** that filters by name or class and
+  auto-expands the matches.
 - **Measure** — length / point / area with selectable object snapping (endpoint,
   midpoint, edge, face); the point tool reports IFC X/Y/Z and Stereo 70 E/N/H when
   georeferenced. Length/area readouts follow the unit + decimal settings, and when
   the cadastre module is on, snapping extends to parcel corners (measure model ↔ plot).
 - **Section** — a single clip plane created by double-clicking a face, with a
   draggable handle and size/flip controls.
+- **Saved views** — store the current camera and visibility from the **Views** menu and
+  return to them anytime; the list is remembered per file in `localStorage`.
 - **Data table (pivot)** — docked, resizable table that groups elements by
   Model / class / material / property / quantity and aggregates value columns
-  (sum/avg/count/min/max), with row→3D selection and CSV export.
+  (sum/avg/count/min/max), with row→3D selection and CSV export. A **bill-of-quantities**
+  preset groups by class → material and sums the base quantities, and a **printable
+  report** opens a styled page you can save as PDF.
 - **Filter & select** — a rule-based query builder (IFC type *is one of*, property
-  `pset.name operator value`, or name contains/equals/regex) combined with AND/OR, an
-  optional result limit, and an optional "only within current selection" (chaining); Run
+  `pset.name operator value`, or name contains/equals/regex) combined with AND/OR; Run
   to **select or isolate** the matches in 3D.
 - **IDS** — validate the primary model against an uploaded IDS specification, **and author
   IDS in-app**: the IDS creator (✎) builds specifications across all six facets
@@ -138,6 +143,8 @@ The suite lives in `tests/`:
 - **`idsWriter.test.ts`** — the IDS serializer: round-trips an authored `IDSDocument`
   (every facet + constraint) through `serializeIds` → `parseIdsXml` and audits the XML.
   Always runs.
+- **`boqReport.test.ts`** — the bill-of-quantities preset builder (`boqPresetConfig`):
+  groups by class → material and picks the present base quantities. Pure; always runs.
 - **`createSite.test.ts`** — `IfcEditor` round-trip on an inline minimal IFC4 model
   (edit attribute + property + new pset, then export and re-open). Self-contained;
   always runs.
@@ -188,14 +195,15 @@ src/
   components/
     Header, UploadPanel, Viewer, IfcTree, PropsPanel, EditPanel, GlobeViewer,
     ModelsPanel, NavCube, ViewBar, BcfPanel, IdsPanel, DataTablePanel,
-    DataTableConfig, Modal, HelpModal, SettingsModal, GeorefPanel (cadastre),
-    IdsEditorModal (IDS creator), FilterModal (filter & select)
+    DataTableConfig, Modal, HelpModal, SettingsModal, ErrorBoundary, GeorefPanel
+    (cadastre), IdsEditorModal (IDS creator), FilterModal (filter & select)
   viewer/
     engine.ts              WebGPU engine wrapper (@ifc-lite/renderer): federated load,
                            pick/render, camera + nav-cube matrices, selection outline,
                            section indicator, snapping, projection
     model.ts               per-model spatial/class/material trees + property groups
     pivot.ts               data-table model: field discovery, aggregation, CSV export
+    boqReport.ts           bill-of-quantities preset + printable (PDF) HTML report
     measure.ts             measurement tool (length/point/area) + snap glyphs
     alignTool.ts           cadastre: snap two model points for georeferencing
     parcelLayer.ts         cadastre: draw/snap/select ANCPI parcels in the 3D scene

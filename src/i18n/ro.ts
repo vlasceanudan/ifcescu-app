@@ -25,7 +25,11 @@ export const ro = {
     downloadTitle: "Descarcă IFC-ul cu modificările aplicate",
     editedSuffix: "editat",
     processing: "Se procesează fișierul…",
+    processingHint: "Se parsează modelul și se pregătește geometria. La fișiere mari poate dura câteva secunde.",
     invalidIfc: "Nu am putut citi fișierul ca IFC valid. {detail}",
+    crashTitle: "A apărut o eroare neașteptată",
+    crashBody: "Vizualizatorul a întâmpinat o problemă. Poți reîncărca aplicația pentru a continua.",
+    reload: "Reîncarcă",
     themeLight: "Mod luminos",
     themeDark: "Mod întunecat",
     langToggleTitle: "Schimbă limba (RO/EN)",
@@ -121,6 +125,8 @@ export const ro = {
     colorOff: "Oprește colorarea în 3D",
     colorOn: "Colorează elementele 3D după prima grupare",
     organize: "Organizare (grupări și coloane)",
+    boqPresetTitle: "Preset antemăsurătoare (clasă → material, sume cantități)",
+    reportTitle: "Raport printabil (PDF)",
     exportCsv: "Export CSV",
     empty: "Adăugați cel puțin un câmp de grupare din „⚙ Organizare”.",
     group: "Grup",
@@ -136,6 +142,10 @@ export const ro = {
     addColumn: "+ Adaugă coloană",
     showTotals: "Afișează rândul de total",
     aggregate: { sum: "Sumă", avg: "Medie", count: "Număr", min: "Minim", max: "Maxim" },
+  },
+  boq: {
+    title: "Antemăsurătoare",
+    generated: "generat la",
   },
   pivot: {
     model: "Model",
@@ -243,8 +253,6 @@ export const ro = {
     title: "Filtrare & selecție",
     and: "ȘI",
     or: "SAU",
-    limit: "Limită",
-    inSelection: "Doar în selecția curentă ({n})",
     addRule: "+ Adaugă regulă…",
     ruleType: "Tip IFC",
     ruleProperty: "Proprietate",
@@ -309,9 +317,17 @@ export const ro = {
     show: "Afișează modelul",
     schemaBadge: "Schemă IFC",
     remove: "Elimină modelul",
+    colorByModel: "Colorează după model",
+    colorByModelTitle: "Colorează fiecare model cu o culoare distinctă",
+  },
+  viewpoints: {
+    save: "Salvează vederea curentă",
+    defaultName: "Vedere {n}",
+    restore: "Restaurează vederea",
+    delete: "Șterge vederea",
   },
   upload: {
-    change: "📁 Schimbă fișier",
+    change: "Schimbă fișier",
     changeTitle: "Încarcă alt fișier IFC",
     sub: "Încărcați un fișier IFC pentru a-l vizualiza în 3D și a-i edita atributele și proprietățile.",
     dropPre: "Trageți un fișier ",
@@ -322,6 +338,9 @@ export const ro = {
     expandAll: "Extinde tot",
     hide: "Ascunde",
     show: "Afișează",
+    searchPlaceholder: "Caută după nume sau clasă...",
+    searchClear: "Șterge căutarea",
+    noResults: "Niciun rezultat",
   },
   viewbar: {
     home: "Acasă (model principal)",
@@ -413,10 +432,10 @@ export const ro = {
       "1. Încărcați un fișier .ifc (trageți-l în pagină sau faceți click).\n2. Selectați un element în vizualizatorul 3D sau în arbore.\n3. Vedeți atributele și proprietățile în panoul din dreapta.\n4. Editați (E), măsurați, creați secțiuni sau validați IDS.\n5. Descărcați modelul editat (.ifc) din bara de sus.",
     nav3dTitle: "Vizualizare & navigare 3D",
     nav3dBody:
-      "• Orbitare: butonul stâng al mouse-ului.\n• Deplasare (pan): butonul drept sau mijlociu.\n• Zoom: rotița mouse-ului.\n• Cubul de navigație (dreapta-sus): click pe o față sau trageți pentru a roti.\n• Bara de jos: acasă, încadrează tot, zoom, ecran complet.\n• Tastele 1–6: vederi ortografice; Z încadrează tot.",
+      "• Orbitare: butonul stâng al mouse-ului.\n• Deplasare (pan): butonul drept sau mijlociu.\n• Zoom: rotița mouse-ului.\n• Cubul de navigație (dreapta-sus): click pe o față sau trageți pentru a roti.\n• Bara de jos: acasă, încadrează tot, zoom, ecran complet.\n• Tastele 1–6: vederi ortografice; Z încadrează tot.\n• Vederi salvate (meniul Vederi): salvează camera și vizibilitatea curentă și revino la ele oricând (memorate pe fișier).",
     treeTitle: "Arbore & selecție",
     treeBody:
-      "• Filele Spațial / Clase / Materiale reorganizează aceleași elemente.\n• Click pe un rând pentru a selecta; ochiul comută vizibilitatea.\n• Clasele IFC apar verbatim (IfcWall, IfcSlab…), grupate cu număr.\n• Restrânge tot / Extinde tot din bara arborelui.",
+      "• Filele Spațial / Clase / Materiale reorganizează aceleași elemente.\n• Câmpul de căutare filtrează arborele după nume sau clasă și extinde automat potrivirile.\n• Click pe un rând pentru a selecta; ochiul comută vizibilitatea.\n• Clasele IFC apar verbatim (IfcWall, IfcSlab…), grupate cu număr.\n• Restrânge tot / Extinde tot din bara arborelui.",
     propertiesTitle: "Proprietăți",
     propertiesBody:
       "• Cu un element selectat: atribute (Nume, Descriere…) + seturi de proprietăți; seturile de cantități (Qto_) apar ultimele.\n• Marcați o proprietate cu ☆ pentru a o fixa în secțiunea „Favorite”.\n• Fără selecție: privire de ansamblu a modelului (dimensiune, schemă, proiect) + locația pe hartă.",
@@ -428,13 +447,13 @@ export const ro = {
       "• Măsurare: distanță, punct sau arie, cu snap la vârf/mijloc/muchie/față.\n• Secțiune: dublu-click pe o față creează un plan de tăiere; mutați-l cu mânerul, ajustați dimensiunea sau inversați partea păstrată.\n• Vizibilitate: ascunde (H), izolează (I), încadrează (F), afișează tot.",
     federationTitle: "Federare modele",
     federationBody:
-      "• Panoul „Modele” încarcă mai multe fișiere IFC în aceeași scenă.\n• Primul model (★) dă originea; celelalte sunt plasate după georeferențiere.\n• Arborele, selecția și tabelul funcționează pe toate modelele; editarea, Globul, IDS și BCF doar pe modelul principal.",
+      "• Panoul „Modele” încarcă mai multe fișiere IFC în aceeași scenă.\n• Primul model (★) dă originea; celelalte sunt plasate după georeferențiere.\n• „Colorează după model” dă fiecărui model o culoare distinctă pentru a-l deosebi în scenă.\n• Arborele, selecția și tabelul funcționează pe toate modelele; editarea, Globul, IDS și BCF doar pe modelul principal.",
     dataTableTitle: "Tabel de date",
     dataTableBody:
-      "• Grupează elementele după model / clasă / material / proprietate / cantitate.\n• Agregă coloane de valori (sumă/medie/număr/min/max), cu rând de total.\n• Click pe un rând selectează elementele în 3D; colorează 3D după prima grupare; export CSV.",
+      "• Grupează elementele după model / clasă / material / proprietate / cantitate.\n• Agregă coloane de valori (sumă/medie/număr/min/max), cu rând de total.\n• Click pe un rând selectează elementele în 3D; colorează 3D după prima grupare.\n• Antemăsurătoare: presetul (riglă) grupează pe clasă → material și însumează cantitățile de bază; raportul printabil (imprimantă) deschide o pagină pentru salvare ca PDF; export CSV (pagină).",
     filterTitle: "Filtrare & selecție",
     filterBody:
-      "• Butonul Filtru deschide un constructor de reguli: tip IFC (una din mai multe clase), proprietate (set + nume + operator + valoare) sau nume (conține / egal / regex).\n• Combinați regulile cu ȘI / SAU, limitați rezultatele și, opțional, filtrați doar în selecția curentă (înlănțuire).\n• Apăsați Selectează sau Izolează — elementele potrivite se selectează / izolează în 3D.",
+      "• Butonul Filtru deschide un constructor de reguli: tip IFC (una din mai multe clase), proprietate (set + nume + operator + valoare) sau nume (conține / egal / regex).\n• Combinați regulile cu ȘI / SAU.\n• Apăsați Selectează sau Izolează — elementele potrivite se selectează / izolează în 3D.",
     idsBcfTitle: "IDS & BCF",
     idsBcfBody:
       "• IDS: încărcați o specificație .ids pentru a verifica modelul; vedeți conform/neconform pe specificație; creați topicuri BCF din neconformități.\n• Creator IDS (✎ în panoul IDS): construiți specificații IDS în aplicație (fațete Entity/Attribute/Property/Classification/Material/PartOf), exportați .ids și validați direct pe model.\n• BCF: creați un topic din vederea curentă (cameră + selecție + captură); importați/exportați .bcfzip.",

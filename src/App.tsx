@@ -9,6 +9,7 @@ import { Viewer } from "./components/Viewer";
 import { GlobeViewer } from "./components/GlobeViewer";
 import { HelpModal } from "./components/HelpModal";
 import { SettingsModal } from "./components/SettingsModal";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import type { IDSValidationReport } from "./ifc/ids";
 import type { BCFProject } from "./ifc/bcf";
 import type { Parcel } from "./geo/ancpi";
@@ -196,14 +197,24 @@ export default function App() {
           <div className="upload-empty">
             <div>
               <UploadPanel onFile={onFile} variant="drop" />
-              {busy && <div className="alert">{t("app.processing")}</div>}
+              {busy && (
+                <div className="loading-card">
+                  <span className="spinner" />
+                  <div className="loading-text">
+                    <div className="loading-title">{t("app.processing")}</div>
+                    <div className="loading-hint">{t("app.processingHint")}</div>
+                  </div>
+                </div>
+              )}
               {error && <div className="alert error">{error}</div>}
             </div>
           </div>
         )}
 
-        {loaded && tab === "view" && (
-          <Viewer
+        {loaded && (
+          <ErrorBoundary key={loaded.fileName} title={t("app.crashTitle")} body={t("app.crashBody")} reloadLabel={t("app.reload")}>
+            {tab === "view" ? (
+              <Viewer
             editor={loaded.editor}
             onChangeCount={setChangeCount}
             bytes={loaded.bytes}
@@ -222,11 +233,11 @@ export default function App() {
             onRemoveModel={onRemoveModel}
             parcels={parcels}
             onParcelsChange={setParcels}
-          />
-        )}
-
-        {loaded && tab === "globe" && (
-          <GlobeViewer bytes={loaded.bytes} georef={georef} theme={theme} parcels={parcels} />
+              />
+            ) : (
+              <GlobeViewer bytes={loaded.bytes} georef={georef} theme={theme} parcels={parcels} />
+            )}
+          </ErrorBoundary>
         )}
       </main>
 

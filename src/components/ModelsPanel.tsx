@@ -15,13 +15,16 @@ interface Props {
   onToggleVisible: (id: string, visible: boolean) => void;
   onRemove: (id: string) => void; // not offered for the primary model in v1
   onAddModel: (file: File) => void;
+  colorByModel: boolean;
+  onColorByModel: (on: boolean) => void;
   /** Fixed pixel height once the user has dragged the resizer; null = auto (CSS-capped). */
   height?: number | null;
 }
 
 /** "Modele" section at the top of the left panel: lists federated models with a
- *  visibility toggle and remove (×), plus an "Adaugă model" button. */
-export function ModelsPanel({ models, busy, onToggleVisible, onRemove, onAddModel, height }: Props) {
+ *  visibility toggle and remove (×), plus an "Adaugă model" button and a
+ *  "color by model" toggle. */
+export function ModelsPanel({ models, busy, onToggleVisible, onRemove, onAddModel, colorByModel, onColorByModel, height }: Props) {
   const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
   return (
@@ -35,6 +38,12 @@ export function ModelsPanel({ models, busy, onToggleVisible, onRemove, onAddMode
           {t("models.add")}
         </button>
       </div>
+      {models.length > 1 && (
+        <label className="models-colorby" title={t("models.colorByModelTitle")}>
+          <input type="checkbox" checked={colorByModel} onChange={(e) => onColorByModel(e.target.checked)} />
+          <span>{t("models.colorByModel")}</span>
+        </label>
+      )}
       <div className="models-list">
         {models.map((m) => (
           <div className="models-row" key={m.id}>

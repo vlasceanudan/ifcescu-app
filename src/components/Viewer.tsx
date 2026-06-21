@@ -1,5 +1,6 @@
 import { type ReactNode, type CSSProperties, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { IfcDataStore } from "@ifc-lite/parser";
+import type { ViewerCameraState } from "@ifc-lite/bcf";
 import type { Theme } from "../hooks/useTheme";
 import type { GeorefInfo } from "../ifc/editor";
 import { detectSchema, type IfcSchema } from "../ifc/store";
@@ -24,7 +25,7 @@ import { ModelsPanel } from "./ModelsPanel";
 import { GeorefPanel } from "./GeorefPanel";
 import { NavCube } from "./NavCube";
 import { ViewBar } from "./ViewBar";
-import type { PivotConfig, PivotModel, Rgba } from "../viewer/pivot";
+import { groupColor, type PivotConfig, type PivotModel, type Rgba } from "../viewer/pivot";
 import { runIdsValidation } from "../ifc/ids";
 import type { IDSValidationReport, IDSDocument } from "../ifc/ids";
 import { IdsEditorModal } from "./IdsEditorModal";
@@ -33,6 +34,15 @@ import { createBCFFromIDSReport, addTopicToProject, type BCFProject } from "../i
 
 // Non-conforming IDS elements are painted this red in the 3D view.
 const IDS_FAIL_COLOR: [number, number, number, number] = [0.85, 0.13, 0.13, 1];
+
+/** A locally-saved viewpoint: camera pose + user visibility (B4). */
+interface Viewpoint {
+  id: string;
+  name: string;
+  cam: ViewerCameraState;
+  hidden: number[];
+  isolated: number[] | null;
+}
 
 interface Props {
   /** The primary model's editor (owned by App so edits survive tab switches). */
@@ -277,6 +287,11 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
   // Per-element colors from the data-table "color by group" toggle (null = off).
   // Takes priority over the IDS red-paint when both could apply.
   const [groupColorMap, setGroupColorMap] = useState<Map<number, Rgba> | null>(null);
+  // "Color by model" (left panel): paints each federated model a distinct color.
+  const [colorByModel, setColorByModel] = useState(false);
+  // B4: locally-saved viewpoints (camera + visibility), persisted per file.
+  const [viewpoints, setViewpoints] = useState<Viewpoint[]>([]);
+  const vpSeq = useRef(0);
   // Bottom data-table (pivot). Independent of the right dock so they can coexist;
   // the config persists while the panel is toggled off/on.
   const [tableOpen, setTableOpen] = useState(false);
@@ -564,10 +579,16 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
   useEffect(() => {
     const eng = engineRef.current;
     if (!eng || !ready) return;
-    // Base layer: data-table group colors take priority, else IDS non-conforming red.
+    // Base layer priority: data-table group colors > color-by-model > IDS red.
     const map = new Map<number, [number, number, number, number]>();
     if (groupColorMap && groupColorMap.size) {
       for (const [id, c] of groupColorMap) map.set(id, c);
+    } else if (colorByModel) {
+      let i = 0;
+      for (const rec of modelStoresRef.current.values()) {
+        const c = groupColor(i++);
+        for (const g of rec.globalIDs) map.set(g, c);
+      }
     } else if (idsReport) {
       for (const spec of idsReport.specificationResults)
         for (const e of spec.entityResults) if (!e.passed) map.set(e.expressId, IDS_FAIL_COLOR);
@@ -580,7 +601,7 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
     }
     if (map.size) eng.setColorOverrideMap(map);
     else eng.clearColorOverrides();
-  }, [groupColorMap, idsReport, ready, selectedIds, settings.viewer.selection.fill]);
+  }, [groupColorMap, colorByModel, idsReport, ready, selectedIds, settings.viewer.selection.fill]);
 
   // Selection outline color follows the setting.
   useEffect(() => {
@@ -624,6 +645,13 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
 
   function wireEvents(host: HTMLElement) {
     host.onclick = async (ev: MouseEvent) => {
+      // Only the 3D canvas drives picking/measurement. Overlays inside the host
+      // (ViewBar, NavCube, section controls) are interactive and must NOT fall
+      // through to a pick — React's stopPropagation can't stop this native
+      // host-level handler (React listens at the root, above the host), so we
+      // gate on the target instead. The SVG overlays are pointer-events:none, so
+      // genuine 3D clicks still land on the canvas.
+      if (ev.target !== canvasRef.current) return;
       const align = alignToolRef.current;
       if (align && align.armed()) return align.onClick(ev);
       const layer = parcelLayerRef.current;
@@ -855,6 +883,7 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
     applyVisibility();
     setModelList((l) => l.map((m) => (m.id === id ? { ...m, visible } : m)));
   };
+
   const hideIds = (ids: number[]) => {
     for (const id of ids) hiddenRef.current.add(id);
     applyVisibility();
@@ -875,6 +904,44 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
     hiddenRef.current.clear();
     applyVisibility();
   };
+
+  // --- saved viewpoints (B4) ----------------------------------------------
+  const vpKey = `viewpoints:${fileName}`;
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`viewpoints:${fileName}`);
+      const list: Viewpoint[] = raw ? JSON.parse(raw) : [];
+      setViewpoints(Array.isArray(list) ? list : []);
+      vpSeq.current = Array.isArray(list) ? list.length : 0;
+    } catch {
+      setViewpoints([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileName]);
+  const persistViewpoints = (list: Viewpoint[]) => {
+    setViewpoints(list);
+    try { localStorage.setItem(vpKey, JSON.stringify(list)); } catch { /* quota — keep in memory */ }
+  };
+  const saveViewpoint = () => {
+    const eng = engineRef.current;
+    if (!eng) return;
+    const vp: Viewpoint = {
+      id: `vp-${Date.now()}-${++vpSeq.current}`,
+      name: t("viewpoints.defaultName", { n: viewpoints.length + 1 }),
+      cam: eng.getCameraState(),
+      hidden: [...hiddenRef.current],
+      isolated: isolatedRef.current ? [...isolatedRef.current] : null,
+    };
+    persistViewpoints([...viewpoints, vp]);
+  };
+  const restoreViewpoint = (vp: Viewpoint) => {
+    const eng = engineRef.current;
+    if (!eng) return;
+    eng.applyCameraState(vp.cam);
+    if (vp.isolated) isolateIds(vp.isolated);
+    else { showAll(); if (vp.hidden.length) hideIds(vp.hidden); }
+  };
+  const deleteViewpoint = (id: string) => persistViewpoints(viewpoints.filter((v) => v.id !== id));
   const hideSelection = () => {
     const ids = [...selectedRef.current];
     if (!ids.length) return;
@@ -998,6 +1065,8 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
           onToggleVisible={toggleModelVisible}
           onRemove={onRemoveModel}
           onAddModel={onAddModel}
+          colorByModel={colorByModel}
+          onColorByModel={setColorByModel}
           height={modelsHeight}
         />
         <div className="models-resize" onMouseDown={startModelsResize} title={t("viewer.resizeModels")} />
@@ -1094,6 +1163,20 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
             <button className="vmenu-item" onClick={() => engineRef.current?.fit()}>
               <span className="ic">⤢</span><span>{t("viewer.fitAll")}</span><span className="vmenu-key">Z</span>
             </button>
+            <div className="vmenu-sep" />
+            <button className="vmenu-item" onClick={saveViewpoint}>
+              <span className="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg></span><span>{t("viewpoints.save")}</span>
+            </button>
+            {viewpoints.length > 0 && (
+              <div className="vp-list" onClick={(e) => e.stopPropagation()}>
+                {viewpoints.map((vp) => (
+                  <div className="vp-row" key={vp.id}>
+                    <span className="vp-name" title={t("viewpoints.restore")} onClick={() => restoreViewpoint(vp)}>{vp.name}</span>
+                    <span className="vp-del" title={t("viewpoints.delete")} onClick={() => deleteViewpoint(vp.id)}>×</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </Dropdown>
 
           <span className="vsep" />
@@ -1284,21 +1367,15 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
         />
       )}
 
-      {filterOpen && (() => {
-        const eng = engineRef.current;
-        const localIds: number[] = [];
-        if (eng) for (const g of selectedIds) { const r = eng.resolveGlobal(g); if (r && isPrimary(r.modelId)) localIds.push(r.localId); }
-        return (
-          <FilterModal
-            editor={editor}
-            selectedLocalIds={localIds}
-            schema={detectSchema(bytes) as any}
-            pivotModels={pivotModels}
-            onResult={(ids, isolate) => { if (isolate) isolateIds(ids); else selectIds(ids); }}
-            onClose={() => setFilterOpen(false)}
-          />
-        );
-      })()}
+      {filterOpen && (
+        <FilterModal
+          editor={editor}
+          schema={detectSchema(bytes) as any}
+          pivotModels={pivotModels}
+          onResult={(ids, isolate) => { if (isolate) isolateIds(ids); else selectIds(ids); }}
+          onClose={() => setFilterOpen(false)}
+        />
+      )}
 
       {dock === "bcf" && (
         <BcfPanel

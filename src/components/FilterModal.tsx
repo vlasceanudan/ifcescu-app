@@ -16,8 +16,6 @@ const PROP_OPS: FilterOperator[] = ["=", "!=", ">", "<", ">=", "<=", "CONTAINS",
 
 interface Props {
   editor: IfcEditor;
-  /** Primary-model local ids currently selected (for "within current selection"). */
-  selectedLocalIds: number[];
   schema: IfcSchemaVersion;
   pivotModels: PivotModel[];
   /** Apply the matched ids: select (isolate=false) or isolate (isolate=true) in 3D. */
@@ -27,12 +25,10 @@ interface Props {
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-export function FilterModal({ editor, selectedLocalIds, schema, pivotModels, onResult, onClose }: Props) {
+export function FilterModal({ editor, schema, pivotModels, onResult, onClose }: Props) {
   const { t } = useI18n();
   const [rules, setRules] = useState<Rule[]>([{ kind: "type", classes: [] }]);
   const [combinator, setCombinator] = useState<"AND" | "OR">("AND");
-  const [limit, setLimit] = useState(1000);
-  const [scopeSel, setScopeSel] = useState(false);
   const [count, setCount] = useState<number | null>(null);
 
   const [suggest, setSuggest] = useState<{ classes: string[]; psets: string[]; props: string[] }>({ classes: [], psets: [], props: [] });
@@ -48,7 +44,7 @@ export function FilterModal({ editor, selectedLocalIds, schema, pivotModels, onR
     return () => { live = false; };
   }, [schema, pivotModels]);
 
-  useEffect(() => setCount(null), [rules, combinator, limit, scopeSel]);
+  useEffect(() => setCount(null), [rules, combinator]);
 
   const ruleIds = (r: Rule): Set<number> => {
     if (r.kind === "type") {
@@ -81,8 +77,6 @@ export function FilterModal({ editor, selectedLocalIds, schema, pivotModels, onR
       sets.sort((a, b) => a.size - b.size);
       ids = [...sets[0]].filter((id) => sets.every((s) => s.has(id)));
     }
-    if (scopeSel) { const sel = new Set(selectedLocalIds); ids = ids.filter((id) => sel.has(id)); }
-    if (limit > 0) ids = ids.slice(0, limit);
     return ids;
   };
 
@@ -119,13 +113,6 @@ export function FilterModal({ editor, selectedLocalIds, schema, pivotModels, onR
             <button className={combinator === "AND" ? "active" : ""} onClick={() => setCombinator("AND")}>{t("filter.and")}</button>
             <button className={combinator === "OR" ? "active" : ""} onClick={() => setCombinator("OR")}>{t("filter.or")}</button>
           </div>
-          <label className="field" style={{ width: 110 }}><span>{t("filter.limit")}</span>
-            <input type="number" min={0} value={limit} onChange={(e) => setLimit(Number(e.target.value) || 0)} />
-          </label>
-          <label className="set-snap" style={{ marginLeft: "auto" }}>
-            <input type="checkbox" checked={scopeSel} disabled={!selectedLocalIds.length} onChange={(e) => setScopeSel(e.target.checked)} />
-            {t("filter.inSelection", { n: selectedLocalIds.length })}
-          </label>
         </div>
 
         {rules.map((r, i) => (

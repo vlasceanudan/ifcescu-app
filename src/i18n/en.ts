@@ -21,7 +21,11 @@ export const en: Dict = {
     downloadTitle: "Download the IFC with your edits applied",
     editedSuffix: "edited",
     processing: "Processing file…",
+    processingHint: "Parsing the model and preparing geometry. This can take a few seconds for large files.",
     invalidIfc: "Could not read the file as valid IFC. {detail}",
+    crashTitle: "An unexpected error occurred",
+    crashBody: "The viewer ran into a problem. You can reload the app to continue.",
+    reload: "Reload",
     themeLight: "Light mode",
     themeDark: "Dark mode",
     langToggleTitle: "Change language (RO/EN)",
@@ -117,6 +121,8 @@ export const en: Dict = {
     colorOff: "Stop 3D coloring",
     colorOn: "Color 3D elements by the first grouping",
     organize: "Organize (groupings and columns)",
+    boqPresetTitle: "Bill of quantities preset (class → material, quantity sums)",
+    reportTitle: "Printable report (PDF)",
     exportCsv: "Export CSV",
     empty: "Add at least one grouping field from „⚙ Organize”.",
     group: "Group",
@@ -132,6 +138,10 @@ export const en: Dict = {
     addColumn: "+ Add column",
     showTotals: "Show totals row",
     aggregate: { sum: "Sum", avg: "Average", count: "Count", min: "Min", max: "Max" },
+  },
+  boq: {
+    title: "Bill of Quantities",
+    generated: "generated on",
   },
   pivot: {
     model: "Model",
@@ -239,8 +249,6 @@ export const en: Dict = {
     title: "Filter & select",
     and: "AND",
     or: "OR",
-    limit: "Limit",
-    inSelection: "Only within current selection ({n})",
     addRule: "+ Add rule…",
     ruleType: "IFC type",
     ruleProperty: "Property",
@@ -305,9 +313,17 @@ export const en: Dict = {
     show: "Show the model",
     schemaBadge: "IFC schema",
     remove: "Remove the model",
+    colorByModel: "Color by model",
+    colorByModelTitle: "Color each model with a distinct color",
+  },
+  viewpoints: {
+    save: "Save current view",
+    defaultName: "View {n}",
+    restore: "Restore view",
+    delete: "Delete view",
   },
   upload: {
-    change: "📁 Change file",
+    change: "Change file",
     changeTitle: "Load another IFC file",
     sub: "Upload an IFC file to view it in 3D and edit its attributes and properties.",
     dropPre: "Drag a ",
@@ -318,6 +334,9 @@ export const en: Dict = {
     expandAll: "Expand all",
     hide: "Hide",
     show: "Show",
+    searchPlaceholder: "Search by name or class...",
+    searchClear: "Clear search",
+    noResults: "No results",
   },
   viewbar: {
     home: "Home (primary model)",
@@ -409,10 +428,10 @@ export const en: Dict = {
       "1. Upload an .ifc file (drag it onto the page or click).\n2. Select an element in the 3D viewer or the tree.\n3. See its attributes and properties in the right-hand panel.\n4. Edit (E), measure, create sections, or validate against IDS.\n5. Download the edited model (.ifc) from the top bar.",
     nav3dTitle: "3D view & navigation",
     nav3dBody:
-      "• Orbit: left mouse button.\n• Pan: right or middle mouse button.\n• Zoom: mouse wheel.\n• Navigation cube (top-right): click a face or drag to rotate.\n• Bottom bar: home, fit all, zoom, fullscreen.\n• Keys 1–6: orthographic views; Z fits all.",
+      "• Orbit: left mouse button.\n• Pan: right or middle mouse button.\n• Zoom: mouse wheel.\n• Navigation cube (top-right): click a face or drag to rotate.\n• Bottom bar: home, fit all, zoom, fullscreen.\n• Keys 1–6: orthographic views; Z fits all.\n• Saved views (Views menu): store the current camera and visibility and return to them anytime (remembered per file).",
     treeTitle: "Tree & selection",
     treeBody:
-      "• The Spatial / Class / Material tabs reorganize the same elements.\n• Click a row to select; the eye toggles visibility.\n• IFC classes are shown verbatim (IfcWall, IfcSlab…), grouped with a count.\n• Collapse all / Expand all from the tree toolbar.",
+      "• The Spatial / Class / Material tabs reorganize the same elements.\n• The search field filters the tree by name or class and auto-expands matches.\n• Click a row to select; the eye toggles visibility.\n• IFC classes are shown verbatim (IfcWall, IfcSlab…), grouped with a count.\n• Collapse all / Expand all from the tree toolbar.",
     propertiesTitle: "Properties",
     propertiesBody:
       "• With an element selected: attributes (Name, Description…) + property sets; quantity sets (Qto_) come last.\n• Star a property with ☆ to pin it in the “Favorites” section.\n• With nothing selected: a model overview (size, schema, project) + the location on a map.",
@@ -424,13 +443,13 @@ export const en: Dict = {
       "• Measure: distance, point, or area, with snapping to vertex/midpoint/edge/face.\n• Section: double-click a face to create a clip plane; move it with the handle, adjust the size, or flip the kept side.\n• Visibility: hide (H), isolate (I), frame (F), show all.",
     federationTitle: "Model federation",
     federationBody:
-      "• The “Models” panel loads multiple IFC files into one scene.\n• The first model (★) sets the origin; the rest are placed by georeferencing.\n• The tree, selection, and table work across all models; editing, the Globe, IDS, and BCF apply to the primary model only.",
+      "• The “Models” panel loads multiple IFC files into one scene.\n• The first model (★) sets the origin; the rest are placed by georeferencing.\n• “Color by model” gives each model a distinct color to tell them apart in the scene.\n• The tree, selection, and table work across all models; editing, the Globe, IDS, and BCF apply to the primary model only.",
     dataTableTitle: "Data table",
     dataTableBody:
-      "• Group elements by model / class / material / property / quantity.\n• Aggregate value columns (sum/avg/count/min/max), with a totals row.\n• Click a row to select the elements in 3D; color 3D by the first grouping; export CSV.",
+      "• Group elements by model / class / material / property / quantity.\n• Aggregate value columns (sum/avg/count/min/max), with a totals row.\n• Click a row to select the elements in 3D; color 3D by the first grouping.\n• Bill of quantities: the preset (ruler) groups by class → material and sums the base quantities; the printable report (printer) opens a page you can save as PDF; export CSV (page).",
     filterTitle: "Filter & select",
     filterBody:
-      "• The Filter button opens a rule builder: IFC type (one of several classes), property (set + name + operator + value), or name (contains / equals / regex).\n• Combine rules with AND / OR, limit the results, and optionally filter only within the current selection (chaining).\n• Press Select or Isolate — the matching elements are selected / isolated in 3D.",
+      "• The Filter button opens a rule builder: IFC type (one of several classes), property (set + name + operator + value), or name (contains / equals / regex).\n• Combine rules with AND / OR.\n• Press Select or Isolate — the matching elements are selected / isolated in 3D.",
     idsBcfTitle: "IDS & BCF",
     idsBcfBody:
       "• IDS: upload an .ids specification to check the model; see pass/fail per specification; create BCF topics from failures.\n• IDS creator (✎ in the IDS panel): author IDS specifications in-app (Entity/Attribute/Property/Classification/Material/PartOf facets), export .ids, and validate against the model.\n• BCF: create a topic from the current view (camera + selection + snapshot); import/export .bcfzip.",
