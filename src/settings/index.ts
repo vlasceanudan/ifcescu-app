@@ -8,8 +8,8 @@ export type AreaUnit = "m2" | "ha";
 export type Projection = "perspective" | "orthographic";
 
 export interface Settings {
-  /** Experimental modules, off by default. Gate the Cadastre, bSDD and Analytics modules. */
-  experimental: { cadastre: boolean; bsdd: boolean; analytics: boolean };
+  /** Experimental modules, off by default. Gate the Cadastre, bSDD, Analytics and Clash modules. */
+  experimental: { cadastre: boolean; bsdd: boolean; analytics: boolean; clash: boolean };
   units: { length: LengthUnit; area: AreaUnit; decimals: number };
   viewer: {
     /** Hex override for the 3D background; null = use the theme default. */
@@ -24,7 +24,7 @@ export interface Settings {
 }
 
 export const DEFAULTS: Settings = {
-  experimental: { cadastre: false, bsdd: false, analytics: false },
+  experimental: { cadastre: false, bsdd: false, analytics: false, clash: false },
   units: { length: "m", area: "m2", decimals: 3 },
   viewer: {
     background: null,

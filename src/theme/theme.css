@@ -3025,3 +3025,64 @@ table.summary td.k {
 .an-kpi-card { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; }
 .an-kpi-big { font-size: 2.2rem; font-weight: 800; color: var(--text); line-height: 1.1; }
 .an-kpi-cap { font-size: 0.78rem; color: var(--muted); margin-top: 4px; text-align: center; }
+
+/* --- Clash detection dock (reuses the .an-dock shell) ------------------- */
+.btn.small { padding: 5px 12px; font-size: 0.8rem; border-radius: 7px; }
+.clash-close {
+  background: none; border: 1px solid var(--border); border-radius: 7px;
+  width: 26px; height: 26px; color: var(--muted); cursor: pointer; font-size: 0.9rem;
+}
+.clash-close:hover { background: var(--surface-2); color: var(--text); }
+.clash-topbar { flex-wrap: wrap; }
+.clash-topbar strong { font-weight: 700; }
+.clash-summary { font-size: 0.82rem; color: var(--muted); }
+.clash-spacer { flex: 1; }
+.clash-inline { display: inline-flex; align-items: center; gap: 5px; font-size: 0.8rem; color: var(--text); }
+.clash-inline input[type="number"] { width: 70px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font-size: 0.78rem; color: var(--text); }
+.clash-config {
+  flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
+  padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--surface);
+}
+.clash-set { display: flex; align-items: center; gap: 6px; }
+.clash-set-label { font-size: 0.78rem; font-weight: 700; color: var(--muted); }
+.clash-dd { position: relative; }
+.clash-dd-btn {
+  display: inline-flex; align-items: center; gap: 8px; min-width: 150px; max-width: 240px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 5px 10px; font-size: 0.78rem; color: var(--text); cursor: pointer;
+}
+.clash-dd-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.clash-dd-caret { flex: 0 0 auto; color: var(--muted); }
+.clash-dd-menu {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; min-width: 220px; max-width: 320px;
+  max-height: 240px; overflow: auto; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: var(--shadow); padding: 4px;
+}
+.clash-dd-item {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px;
+  font-size: 0.8rem; color: var(--text); cursor: pointer;
+}
+.clash-dd-item:hover { background: var(--surface-2); }
+.clash-dd-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clash-opts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-left: auto; }
+.clash-progress { flex: 0 0 auto; height: 4px; background: var(--surface-2); }
+.clash-progress-bar { height: 100%; background: var(--accent); transition: width 0.1s linear; }
+.clash-list { flex: 1; overflow: auto; }
+.clash-empty { display: flex; align-items: center; justify-content: center; height: 100%; min-height: 80px; color: var(--muted); font-size: 0.85rem; text-align: center; padding: 16px; }
+.clash-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.clash-table thead th {
+  position: sticky; top: 0; z-index: 1; text-align: left; padding: 6px 10px;
+  background: var(--surface-2); color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border);
+}
+.clash-table tbody td { padding: 5px 10px; border-bottom: 1px solid var(--border); color: var(--text); }
+.clash-table tbody tr { cursor: pointer; }
+.clash-table tbody tr:hover { background: var(--surface-2); }
+.clash-table tbody tr.active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.clash-badge { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; }
+.clash-badge.hard { background: rgba(219, 38, 38, 0.16); color: #d61f1f; }
+.clash-badge.clearance { background: rgba(255, 153, 26, 0.18); color: #c77400; }
+.clash-approx { margin-left: 6px; font-size: 0.68rem; color: var(--muted); font-style: italic; }
+.clash-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.clash-dot.a { background: #db2626; }
+.clash-dot.b { background: #ff991a; }
+.clash-table select { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 2px 5px; font-size: 0.74rem; color: var(--text); cursor: pointer; }

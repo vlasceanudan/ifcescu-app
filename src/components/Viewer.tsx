@@ -13,7 +13,7 @@ import { AlignTool, type AlignSlot } from "../viewer/alignTool";
 import { ParcelLayer, type ParcelInfo } from "../viewer/parcelLayer";
 import { modelToStereo70, inRomania } from "../geo/placement";
 import type { Parcel } from "../geo/ancpi";
-import { IfcTree, defaultNodeOpen, type TreeNode } from "./IfcTree";
+import { IfcTree, defaultNodeOpen, nodeLabel, type TreeNode } from "./IfcTree";
 import { PropAccordion, FileInfoPanel, type PropGroup, type FileInfo } from "./PropsPanel";
 import { useI18n } from "../i18n/react";
 import { useSettings } from "../settings/react";
@@ -33,7 +33,9 @@ import { FilterModal } from "./FilterModal";
 import { BsddModal } from "./BsddModal";
 // Lazy so Recharts only loads when the analytics panel is opened.
 const AnalyticsPanel = lazy(() => import("./AnalyticsPanel"));
-import { createBCFFromIDSReport, addTopicToProject, type BCFProject } from "../ifc/bcf";
+// Lazy so the clash detection panel (and its compute) load only when opened.
+const ClashPanel = lazy(() => import("./ClashPanel"));
+import { createBCFFromIDSReport, addTopicToProject, extractViewpointState, globalIdsToExpressIds, type BCFProject, type BCFViewpoint } from "../ifc/bcf";
 
 // Non-conforming IDS elements are painted this red in the 3D view.
 const IDS_FAIL_COLOR: [number, number, number, number] = [0.85, 0.13, 0.13, 1];
@@ -180,14 +182,25 @@ function VisIcon({ kind }: { kind: "hide" | "isolate" | "frame" | "show" }) {
   }
 }
 
+// Max auto-fit width for the tree panel (matches the manual-resize clamp).
+const TREE_MAX_WIDTH = 560;
+// Shared canvas 2D context for measuring tree label widths (no DOM/layout thrash).
+let _treeMeasureCtx: CanvasRenderingContext2D | null = null;
+function treeMeasureCtx(): CanvasRenderingContext2D | null {
+  if (!_treeMeasureCtx) _treeMeasureCtx = document.createElement("canvas").getContext("2d");
+  return _treeMeasureCtx;
+}
+
 export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, favorites, onToggleFavorite, bcfProject, onBcfProject, idsReport, onIdsReport, models, onAddModel, onRemoveModel, onGeorefChange, parcels, onParcelsChange }: Props) {
   const { t, lang } = useI18n();
   const { settings, update } = useSettings();
   const cadastreEnabled = settings.experimental.cadastre;
   const bsddEnabled = settings.experimental.bsdd;
   const analyticsEnabled = settings.experimental.analytics;
+  const clashEnabled = settings.experimental.clash;
   const [bsddOpen, setBsddOpen] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  const [clashOpen, setClashOpen] = useState(false);
   // Mirrors the current projection so the empty-deps keydown handler reads a fresh
   // value when toggling with "O" (avoids a stale closure).
   const projectionRef = useRef(settings.viewer.projection);
@@ -334,6 +347,36 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [modelsVersion],
   );
+
+  // Auto-fit the tree panel width to the longest visible label (grow-only, capped),
+  // so deep/long hierarchy names are not truncated. Measures the actual font with a
+  // canvas (no layout thrash); the user can still resize down manually.
+  useEffect(() => {
+    const roots = activeRoots;
+    if (!roots || !roots.length) return;
+    const ctx = treeMeasureCtx();
+    if (!ctx) return;
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const px = rem * 0.85; // .ifctree font-size
+    const ff = getComputedStyle(document.body).fontFamily || "system-ui, sans-serif";
+    const fontNormal = `${px}px ${ff}`;
+    const fontBold = `600 ${px}px ${ff}`; // branch rows are bold
+    let max = 0;
+    const walk = (nodes: TreeNode[], depth: number) => {
+      for (const n of nodes) {
+        const hasChildren = n.children.length > 0;
+        ctx.font = hasChildren ? fontBold : fontNormal;
+        // 72 = paddings + caret + eye + gaps + scrollbar margin; 14/level indent; 19 = model icon.
+        const w = 72 + depth * 14 + (n.type === "MODEL" ? 19 : 0) + ctx.measureText(nodeLabel(n)).width;
+        if (w > max) max = w;
+        if (hasChildren && expanded.has(n.expressID)) walk(n.children, depth + 1);
+      }
+    };
+    walk(roots, 0);
+    const target = Math.min(TREE_MAX_WIDTH, Math.ceil(max));
+    setTreeWidth((w) => (target > w ? target : w));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRoots, expanded, treeView, lang, modelsVersion]);
 
   useEffect(() => {
     if (!hasWebGPU) return;
@@ -1086,6 +1129,61 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
       setGroupColorMap(colors && colors.size ? colors : null);
     }
   };
+
+  // Clash panel: isolate the two clashing elements, paint them (A red / B orange)
+  // and frame them so the interference is centered in the view.
+  const onClashShow = (ids: number[], colors: Map<number, Rgba>, focus?: { center: [number, number, number]; half: number }) => {
+    isolateIds(ids);
+    setGroupColorMap(colors.size ? colors : null);
+    if (focus) engineRef.current?.zoomToBox(focus.center, focus.half);
+    else engineRef.current?.zoomToSelection(ids);
+  };
+  const onClashReset = () => {
+    showAll();
+    setGroupColorMap(null);
+  };
+
+  // Map BCF GlobalIds to GLOBAL ids across all federated models (each model's
+  // local expressIds are offset into the global id space).
+  const guidsToGlobalIds = (guids: string[]): number[] => {
+    if (!guids.length) return [];
+    const out: number[] = [];
+    for (const rec of modelStoresRef.current.values()) {
+      for (const local of globalIdsToExpressIds(rec.store, guids)) out.push(local + rec.offset);
+    }
+    return out;
+  };
+
+  // Parse a BCF ARGB/RGB hex color (e.g. "FFDB2626") to a renderer Rgba (0..1).
+  const argbToRgba = (hex: string): Rgba => {
+    const h = hex.replace(/^#/, "");
+    const has8 = h.length >= 8;
+    const a = has8 ? parseInt(h.slice(0, 2), 16) : 255;
+    const o = has8 ? 2 : 0;
+    return [parseInt(h.slice(o, o + 2), 16) / 255, parseInt(h.slice(o + 2, o + 4), 16) / 255, parseInt(h.slice(o + 4, o + 6), 16) / 255, a / 255];
+  };
+
+  // Apply a BCF viewpoint to the scene: camera, isolation, coloring and selection
+  // — so opening a topic (clash/IDS/manual) reproduces its view, not just selects.
+  const onApplyViewpoint = (vp: BCFViewpoint) => {
+    const eng = engineRef.current;
+    if (!eng) return;
+    const bounds = eng.getModelBoundsState() ?? undefined;
+    const state = extractViewpointState(vp, bounds);
+    const visIds = guidsToGlobalIds(state.visibleGuids);
+    const selIds = guidsToGlobalIds(state.selectedGuids);
+    const colorMap = new Map<number, Rgba>();
+    for (const c of state.coloredGuids) {
+      const rgba = argbToRgba(c.color);
+      for (const g of guidsToGlobalIds(c.guids)) colorMap.set(g, rgba);
+    }
+    if (state.camera) eng.applyCameraState(state.camera);
+    if (visIds.length) isolateIds(visIds);
+    setGroupColorMap(colorMap.size ? colorMap : null);
+    if (selIds.length) selectIds(selIds, selIds.length === 1 ? selIds[0] : undefined);
+    // No saved camera (e.g. IDS topics) -> frame the isolated/selected element(s).
+    if (!state.camera) eng.zoomToSelection(visIds.length ? visIds : selIds);
+  };
   const startModelsResize = (e: ReactMouseEvent) => {
     e.preventDefault();
     // The panel sits directly before the divider; measure from its top edge so the
@@ -1301,6 +1399,13 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
             </button>
           )}
 
+          {clashEnabled && (
+            <button className={"vbtn" + (clashOpen ? " active" : "")} onClick={() => setClashOpen((o) => !o)} disabled={pivotModels.length === 0} title={t("clash.title")}>
+              <span className="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v4M12 18v4M2 12h4M18 12h4" /><path d="m6.3 6.3 2.9 2.9M14.8 14.8l2.9 2.9M17.7 6.3l-2.9 2.9M9.2 14.8l-2.9 2.9" /><circle cx="12" cy="12" r="2.5" /></svg></span>
+              <span>{t("clash.tab")}</span>
+            </button>
+          )}
+
           <span className="vsep" />
 
           <button className={"vbtn" + (showInfo ? " active" : "")} onClick={() => setShowInfo((s) => !s)} title={t("viewer.modelInfoTitle")}>
@@ -1314,6 +1419,21 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
           {analyticsEnabled && analyticsOpen && ready && pivotModels.length > 0 && (
             <Suspense fallback={<div className="an-dock" style={{ height: 380 }} />}>
               <AnalyticsPanel models={pivotModels} onFilter={onAnalyticsFilter} onClose={() => setAnalyticsOpen(false)} />
+            </Suspense>
+          )}
+          {clashEnabled && clashOpen && ready && pivotModels.length > 0 && engineRef.current && (
+            <Suspense fallback={<div className="an-dock" style={{ height: 360 }} />}>
+              <ClashPanel
+                engine={engineRef.current}
+                models={pivotModels}
+                bcfProject={bcfProject}
+                onBcfProject={onBcfProject}
+                onOpenBcf={() => setDock("bcf")}
+                fileName={fileName}
+                onShow={onClashShow}
+                onReset={onClashReset}
+                onClose={() => setClashOpen(false)}
+              />
             </Suspense>
           )}
           {ready && settings.viewer.navCube && (
@@ -1498,7 +1618,7 @@ export function Viewer({ editor, onChangeCount, bytes, fileName, theme, georef, 
           store={storeRef.current}
           fileName={fileName}
           selectedIds={[...selectedIds]}
-          onApplySelection={(ids) => selectIds(ids, ids.length === 1 ? ids[0] : undefined)}
+          onApplyViewpoint={onApplyViewpoint}
           bcfProject={bcfProject ?? null}
           onBcfProject={(p) => onBcfProject?.(p)}
           onClose={() => setDock("none")}

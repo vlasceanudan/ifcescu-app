@@ -55,6 +55,13 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
           desc={t("settings.analyticsDesc")}
           badge={t("settings.badge")}
         />
+        <Toggle
+          checked={s.experimental.clash}
+          onChange={(v) => update({ experimental: { clash: v } })}
+          label={t("settings.clashLabel")}
+          desc={t("settings.clashDesc")}
+          badge={t("settings.badge")}
+        />
       </section>
 
       {/* Units & formatting */}

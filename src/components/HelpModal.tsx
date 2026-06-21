@@ -22,6 +22,7 @@ const SECTIONS: { titleKey: I18nKey; bodyKey: I18nKey; open?: boolean }[] = [
   { titleKey: "help.cadastreTitle", bodyKey: "help.cadastreBody" },
   { titleKey: "help.bsddTitle", bodyKey: "help.bsddBody" },
   { titleKey: "help.analyticsTitle", bodyKey: "help.analyticsBody" },
+  { titleKey: "help.clashTitle", bodyKey: "help.clashBody" },
   { titleKey: "help.settingsTitle", bodyKey: "help.settingsBody" },
   { titleKey: "help.themeLangTitle", bodyKey: "help.themeLangBody" },
 ];

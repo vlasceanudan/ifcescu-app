@@ -208,6 +208,35 @@ export class ViewerEngine {
     return this.models.get(modelId)?.globalIDs ?? [];
   }
 
+  /** World-space (Y-up) AABB of one element, or null if it has no geometry.
+   *  Used by clash detection's broad phase. */
+  elementBounds(id: number): Bounds | null {
+    const b = this.bounds.get(id);
+    return b ? { min: [...b.min] as [number, number, number], max: [...b.max] as [number, number, number] } : null;
+  }
+
+  /** Flat world-space (Y-up) triangle soup for one element: 9 floats per triangle
+   *  (v0 xyz, v1 xyz, v2 xyz). Null if the element has no retained geometry. Used
+   *  by clash detection's narrow phase. */
+  elementTriangleSoup(id: number): Float32Array | null {
+    const list = this.geom.get(id);
+    if (!list || !list.length) return null;
+    let triCount = 0;
+    for (const g of list) triCount += g.idx.length / 3;
+    const out = new Float32Array(triCount * 9);
+    let o = 0;
+    for (const g of list) {
+      const { pos, idx } = g;
+      for (let i = 0; i < idx.length; i++) {
+        const v = idx[i] * 3;
+        out[o++] = pos[v];
+        out[o++] = pos[v + 1];
+        out[o++] = pos[v + 2];
+      }
+    }
+    return out;
+  }
+
   /** Map a global id back to its owning model + local expressId + store. */
   resolveGlobal(globalId: number): { modelId: string; store: IfcDataStore; localId: number } | null {
     const r = this.fed.fromGlobalId(globalId);
@@ -728,6 +757,17 @@ export class ViewerEngine {
     this.renderer.getCamera().frameBounds(
       { x: b.min[0], y: b.min[1], z: b.min[2] },
       { x: b.max[0], y: b.max[1], z: b.max[2] },
+    );
+    this.renderer.requestRender();
+  }
+
+  /** Frame a cube of half-size `half` centered on a world point (Y-up). Used by
+   *  clash detection to zoom onto the interference region, not the whole elements. */
+  zoomToBox(center: [number, number, number], half: number): void {
+    const h = Math.max(half, 1e-3);
+    this.renderer.getCamera().frameBounds(
+      { x: center[0] - h, y: center[1] - h, z: center[2] - h },
+      { x: center[0] + h, y: center[1] + h, z: center[2] + h },
     );
     this.renderer.requestRender();
   }

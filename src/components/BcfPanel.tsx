@@ -1,18 +1,16 @@
 import { useRef, useState } from "react";
 import type { IfcDataStore } from "@ifc-lite/parser";
 import type { ViewerEngine } from "../viewer/engine";
-import type { BCFProject, BCFTopic } from "../ifc/bcf";
+import type { BCFProject, BCFTopic, BCFViewpoint } from "../ifc/bcf";
 import {
   createBCFProject,
   createBCFTopic,
   createViewpoint,
-  extractViewpointState,
   addViewpointToTopic,
   addTopicToProject,
   readBCF,
   downloadBcf,
   expressIdsToGlobalIds,
-  globalIdsToExpressIds,
 } from "../ifc/bcf";
 import { useI18n } from "../i18n/react";
 
@@ -24,8 +22,8 @@ interface Props {
   fileName: string;
   /** Current selection (expressIDs) to embed in a new topic's viewpoint. */
   selectedIds: number[];
-  /** Apply a viewpoint's selection back into the viewer. */
-  onApplySelection: (ids: number[]) => void;
+  /** Apply a viewpoint back into the viewer (camera + isolate + color + select). */
+  onApplyViewpoint: (vp: BCFViewpoint) => void;
   bcfProject: BCFProject | null;
   onBcfProject: (p: BCFProject) => void;
   onClose: () => void;
@@ -41,7 +39,7 @@ export function BcfPanel({
   store,
   fileName,
   selectedIds,
-  onApplySelection,
+  onApplyViewpoint,
   bcfProject,
   onBcfProject,
   onClose,
@@ -90,13 +88,8 @@ export function BcfPanel({
   };
 
   const openTopic = (topic: BCFTopic) => {
-    if (!engine || !store) return;
     const vp = topic.viewpoints[0];
-    if (!vp) return;
-    const bounds = engine.getModelBoundsState() ?? undefined;
-    const state = extractViewpointState(vp, bounds);
-    if (state.camera) engine.applyCameraState(state.camera);
-    if (state.selectedGuids.length) onApplySelection(globalIdsToExpressIds(store, state.selectedGuids));
+    if (vp) onApplyViewpoint(vp);
   };
 
   const onImport = async (file: File | undefined) => {

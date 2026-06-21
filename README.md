@@ -53,7 +53,8 @@ switchable at runtime from a button in the top-right (the choice is remembered).
   model** toggle paints each model a distinct color to tell them apart.
 - **Structure tree** — Spatial / Class / Material tabs, one root per model, elements
   grouped by class, with a **search field** that filters by name or class and
-  auto-expands the matches.
+  auto-expands the matches. The panel **auto-fits its width** to the longest visible
+  label (grow-only, capped) so deep/long names are not truncated; still resizable by hand.
 - **Measure** — length / point / area with selectable object snapping (endpoint,
   midpoint, edge, face); the point tool reports IFC X/Y/Z and Stereo 70 E/N/H when
   georeferenced. Length/area readouts follow the unit + decimal settings, and when
@@ -74,6 +75,18 @@ switchable at runtime from a button in the top-right (the choice is remembered).
   other visual** (they recompute) **and** the 3D viewer (isolates + colors the matching elements; OR within a
   chart, AND across charts). A dependency-free drag/resize grid; charts via Recharts — lazy-loaded so it stays
   out of the initial bundle.
+- **Clash detection (experimental, off by default)** — enable it in Settings; it opens a **resizable bottom
+  dock** (the 3D stays visible above) that checks **geometric interference** between two element sets (**Set A x
+  Set B**, by model). It finds **hard clashes** (overlapping geometry) and **clearance clashes** (gap below a
+  threshold) with a grid-accelerated AABB broad phase, and an optional **triangle-triangle narrow phase**
+  (Moller test) that confirms real interference, **ignores mere surface contact** (e.g. a beam resting on a
+  slab) and reports the **true penetration** depth (not the inflated bounding-box overlap). Clicking a clash
+  **isolates, colors (A red / B orange) and frames the interference region** in 3D; each clash carries a
+  **status** (new/active/resolved/approved/ignored) persisted per file-set in `localStorage`. **Send to BCF**
+  creates one topic + viewpoint per clash (camera framed on the clash, the two elements isolated + colored) and
+  opens the BCF panel to export the `.bcfzip`; results also **export to CSV**. Set A / Set B are multi-select
+  dropdowns. Pure client-side, built on the engine's retained per-element bounds and geometry; the panel is
+  lazy-loaded.
 - **Filter & select** — a rule-based query builder (IFC type *is one of*, property
   `pset.name operator value`, or name contains/equals/regex) combined with AND/OR; Run
   to **select or isolate** the matches in 3D.
@@ -81,13 +94,15 @@ switchable at runtime from a button in the top-right (the choice is remembered).
   IDS in-app**: the IDS creator (✎) builds specifications across all six facets
   (Entity/Attribute/Property/Classification/Material/PartOf), exports a `.ids`, loads an
   existing one to edit, and validates directly against the model.
-- **BCF** — review BCF topics/viewpoints.
+- **BCF** — create topics from the current view, import/export `.bcfzip`, and **open a topic's
+  viewpoint** (↗ 3D) to reproduce it in 3D: camera + isolation + coloring + selection (so topics
+  generated from IDS validation or clash detection restore their exact view).
 - **Globe (Cesium)** — place georeferenced models (or models already in real Stereo 70
   coordinates) on a token-free 3D world map with OSM/Esri basemaps, terrain, and an
   earth-transparency slider; a bundled **EGM2008** geoid grid provides the geoid
   undulation readout. Fetched cadastral parcels are draped on the terrain as polygons.
 - **Settings** — a gear-button dialog (saved to `localStorage`): **experimental
-  features** (gates the cadastre, bSDD and analytics modules — off by default), **units & formatting**
+  features** (gates the cadastre, bSDD, analytics and clash modules — off by default), **units & formatting**
   (length m/cm/mm, area m²/ha, decimals), and **3D viewer** (background, projection
   perspective/orthographic, navigation cube, view bar, default snapping).
 - **bSDD (experimental, off by default)** — enable it in Settings to connect to the online
@@ -163,6 +178,10 @@ The suite lives in `tests/`:
   Always runs.
 - **`boqReport.test.ts`** — the bill-of-quantities preset builder (`boqPresetConfig`):
   groups by class → material and picks the present base quantities. Pure; always runs.
+- **`clash.test.ts`** — clash detection: AABB hard/clearance classification, pair dedup +
+  self-exclusion, the triangle-triangle intersection test (crossing / separated / coplanar),
+  narrow-phase false-positive rejection, status persistence and the async/cancel path. Pure;
+  always runs.
 - **`createSite.test.ts`** — `IfcEditor` round-trip on an inline minimal IFC4 model
   (edit attribute + property + new pset, then export and re-open). Self-contained;
   always runs.
@@ -217,7 +236,8 @@ src/
     ModelsPanel, NavCube, ViewBar, BcfPanel, IdsPanel, DataTablePanel,
     DataTableConfig, Modal, HelpModal, SettingsModal, ErrorBoundary, GeorefPanel
     (cadastre), IdsEditorModal (IDS creator), FilterModal (filter & select),
-    BsddModal (bSDD classifier — experimental), AnalyticsPanel (charts dashboard)
+    BsddModal (bSDD classifier — experimental), AnalyticsPanel (charts dashboard),
+    ClashPanel (clash detection — experimental)
   viewer/
     engine.ts              WebGPU engine wrapper (@ifc-lite/renderer): federated load,
                            pick/render, camera + nav-cube matrices, selection outline,
@@ -225,6 +245,7 @@ src/
     model.ts               per-model spatial/class/material trees + property groups
     pivot.ts               data-table model: field discovery, aggregation, CSV export
     analytics.ts           analytics chart data + cross-filter logic (reuses pivot)
+    clash.ts               clash detection: AABB broad phase + triangle-triangle narrow phase (pure)
     boqReport.ts           bill-of-quantities preset + printable (PDF) HTML report
     measure.ts             measurement tool (length/point/area) + snap glyphs
     alignTool.ts           cadastre: snap two model points for georeferencing

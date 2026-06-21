@@ -45,6 +45,21 @@ export function defaultNodeOpen(node: TreeNode, depth: number): boolean {
   return node.defaultOpen ?? depth < 2;
 }
 
+/** The row label shown for a node (shared by the tree row and the width auto-fit). */
+export function nodeLabel(node: TreeNode): string {
+  const hasChildren = node.children.length > 0;
+  const groupLabel = node.name ? node.name : friendly(node.type);
+  return node.type === "MODEL"
+    ? `${node.name}${node.count != null ? ` (${node.count})` : ""}`
+    : node.count != null
+      ? `${groupLabel} (${node.count})`
+      : !hasChildren
+        ? node.name || `${friendly(node.type)} #${node.expressID}`
+        : node.name
+          ? `${friendly(node.type)}: ${node.name}`
+          : `${friendly(node.type)} #${node.expressID}`;
+}
+
 /** A node's searchable text: its name plus its (friendly) IFC class. */
 function nodeText(node: TreeNode): string {
   return `${node.name || ""} ${friendly(node.type)}`.toLowerCase();
@@ -169,17 +184,7 @@ function Node({
   // - leaf rows (no children = last hierarchy level): NAME ONLY (no class prefix),
   //   falling back to "IfcWall #1234" only when the element is unnamed
   // - branch containers (have children): "IfcSite: SP4" so the class stays visible
-  const groupLabel = node.name ? node.name : friendly(node.type);
-  const label =
-    node.type === "MODEL"
-      ? `${node.name}${node.count != null ? ` (${node.count})` : ""}`
-      : node.count != null
-        ? `${groupLabel} (${node.count})`
-        : !hasChildren
-          ? node.name || `${friendly(node.type)} #${node.expressID}`
-          : node.name
-            ? `${friendly(node.type)}: ${node.name}`
-            : `${friendly(node.type)} #${node.expressID}`;
+  const label = nodeLabel(node);
 
   return (
     <div className="tnode">
